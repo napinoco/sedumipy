@@ -144,8 +144,15 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
 - **PSD錐(`K.s`)のメインループ対応。** `sedumi.m` 本体のADA更新は
   `sum(K.s)==0` で分岐しており、この移植(`getada.py`)は `==0` の
   分岐しか実装していない。`!=0` 側は `getada1`/`getada2`/`getada3`
-  (Cバインディングとしては Phase 2 クラスタ4で既にctypes化済み)の
-  オーケストレーションが必要で、まだ Python 側の結線ができていない。
+  のオーケストレーションが必要だが、**この3つは実際にはまだ
+  ctypesバインディングすら存在しない**(`test_cluster4.py`のスコープ
+  注記の通り、Phase 2クラスタ4では「mexFunction内に計算ロジックが
+  直接書かれていてPhase 3の文脈が要る」として意図的に対象外にされた。
+  過去バージョンの本ドキュメントには「既にctypes化済み」と書かれて
+  いたが、これは誤りだったため訂正した)。加えて `getsymbada.m`
+  (ADAのスパース構造構築、MEX非依存の純MATLABロジック)と
+  `incorder.m`(`incorder.c`は決定的アルゴリズムで`neighborhood.py`
+  と同じ方針で直接Python化できる)も未移植。
   → `sedumi.py` は `K.s` が非空だと `NotImplementedError` を投げる。
 - **密列(dense columns)最適化。** `getdense.m`(密列検出)、
   `incorder.m`(貪欲順序付け)、`getsymbada.m`、`symbcholden.m` は

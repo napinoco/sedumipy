@@ -1525,6 +1525,264 @@ def partitA(At, blkstart):
     return out
 
 
+_lib.getada1.argtypes = [
+    JcIr, JcIr, c_double_p, c_double_p, c_size_t_p, c_size_t_p,
+    c_size_t_p, c_size_t_p, ctypes.c_size_t, ctypes.c_size_t, c_double_p,
+]
+_lib.getada1.restype = None
+
+_lib.getada2.argtypes = [
+    JcIr, JcIr, c_size_t_p, c_size_t_p, ctypes.c_size_t, ctypes.c_size_t, c_double_p,
+]
+_lib.getada2.restype = None
+
+_lib.getada3.argtypes = [
+    JcIr, c_double_p, JcIr, c_double_p,
+    c_size_t_p, c_size_t_p, c_size_t_p, c_size_t_p,
+    c_size_t_p, c_size_t_p, c_size_t_p,
+    c_size_t_p, c_size_t_p,
+    ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(ConeK),
+    c_double_p, ctypes.c_size_t, c_size_t_p, ctypes.c_size_t,
+    c_ubyte_p,
+]
+_lib.getada3.restype = None
+
+_lib.dzblkpartit.argtypes = [
+    c_size_t_p, c_size_t_p, c_size_t_p, ctypes.c_size_t, ctypes.c_size_t,
+]
+_lib.dzblkpartit.restype = None
+
+_lib.spmakesym.argtypes = [JcIr, ctypes.c_size_t, c_size_t_p]
+_lib.spmakesym.restype = None
+
+_lib.cpspdiag.argtypes = [c_double_p, JcIr, ctypes.c_size_t]
+_lib.cpspdiag.restype = None
+
+
+def getada1(ada, At, Ajc2, perm, d: dict, qblkstart):
+    """ADA = getada1(ADA, At, Ajc2, perm, d, qblkstart): fresh
+    ADA(i,j) = (D(d^2; LP,Lorentz)*At(:,i))'*At(:,j) on
+    triu(ADA(perm,perm)) only (matching the sparsity pattern of `ada`;
+    entries outside that triangle come back as 0 regardless of what
+    `ada` held there). Wraps getada1() (getada1.c) exactly as
+    sedumi.m's main loop calls it: `Ajc2` is `Ablkjc[:, 2]` (0-indexed,
+    partitA()'s 3rd column), `perm` is `Aord["lqperm"]` (1-indexed,
+    sortnnz()'s output convention), `qblkstart` is `K["qblkstart"]`
+    (1-indexed cumulative boundaries, length 1+len(K["q"])). `d` needs
+    "l" and "det" arrays (see sdinit.py/updtransfo.py).
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    A = At.tocsc()
+    m = A.shape[1]
+
+    qblkstart_arr = np.ascontiguousarray(qblkstart, dtype=np.int64).ravel()
+    nblk = qblkstart_arr.size
+    d_l = np.ascontiguousarray(d["l"], dtype=np.float64).ravel()
+    d_det = np.ascontiguousarray(d["det"], dtype=np.float64).ravel()
+
+    blkstart = np.zeros(nblk + 1, dtype=np.uintp)
+    blkstart[0] = d_l.size
+    blkstart[1:] = (qblkstart_arr - 1).astype(np.uintp)
+
+    perm_arr = (np.ascontiguousarray(perm, dtype=np.int64).ravel() - 1).astype(np.uintp)
+    invperm = np.zeros(m, dtype=np.uintp)
+    invperm[perm_arr] = np.arange(m, dtype=np.uintp)
+
+    Ajc2_arr = np.ascontiguousarray(Ajc2, dtype=np.uintp).ravel()
+
+    Apr = np.ascontiguousarray(A.data, dtype=np.float64)
+    Ajc = np.ascontiguousarray(A.indptr, dtype=np.uintp)
+    Air = np.ascontiguousarray(A.indices, dtype=np.uintp)
+    at_struct = JcIr(pr=Apr.ctypes.data_as(c_double_p), jc=Ajc.ctypes.data_as(c_size_t_p),
+                      ir=Air.ctypes.data_as(c_size_t_p))
+
+    pattern = ada.tocsc()
+    ada_jc = np.ascontiguousarray(pattern.indptr, dtype=np.uintp)
+    ada_ir = np.ascontiguousarray(pattern.indices, dtype=np.uintp)
+    nnz = int(pattern.indptr[m])
+    ada_pr = np.zeros(max(nnz, 1), dtype=np.float64)
+    ada_struct = JcIr(pr=ada_pr.ctypes.data_as(c_double_p), jc=ada_jc.ctypes.data_as(c_size_t_p),
+                       ir=ada_ir.ctypes.data_as(c_size_t_p))
+
+    fwsiz = max(2 * int(blkstart[nblk]), 1)
+    fwork = np.zeros(fwsiz, dtype=np.float64)
+
+    _lib.getada1(
+        ada_struct, at_struct, d_l.ctypes.data_as(c_double_p), d_det.ctypes.data_as(c_double_p),
+        Ajc2_arr.ctypes.data_as(c_size_t_p), blkstart.ctypes.data_as(c_size_t_p),
+        perm_arr.ctypes.data_as(c_size_t_p), invperm.ctypes.data_as(c_size_t_p),
+        m, nblk, fwork.ctypes.data_as(c_double_p),
+    )
+    return sp.csc_matrix(
+        (ada_pr[:nnz], ada_ir[:nnz].astype(np.int64), ada_jc.astype(np.int64)), shape=(m, m)
+    )
+
+
+def getada2(ada, DAt: dict, Aord: dict, K: dict):
+    """ADA = getada2(ADA, DAt, Aord, K): ADA += DAt["q"]'*DAt["q"] on
+    triu(ADA(qperm,qperm)) only; a plain copy of `ada` (unchanged) when
+    K has no Lorentz blocks or DAt["q"] is completely empty -- both
+    short-circuits present in the real mex wrapper. Wraps getada2()
+    (getada2.c) exactly as sedumi.m's main loop calls it.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    m = ada.shape[0]
+    pattern = ada.tocsc()
+    ada_jc = np.ascontiguousarray(pattern.indptr, dtype=np.uintp)
+    ada_ir = np.ascontiguousarray(pattern.indices, dtype=np.uintp)
+    nnz = int(pattern.indptr[m])
+    ada_pr = np.array(pattern.data, dtype=np.float64, copy=True)
+
+    def _wrap():
+        return sp.csc_matrix(
+            (ada_pr[:nnz], ada_ir[:nnz].astype(np.int64), ada_jc.astype(np.int64)), shape=(m, m)
+        )
+
+    lorN = len(K.get("q", []))
+    ddota = DAt.get("q")
+    if lorN <= 0 or ddota is None:
+        return _wrap()
+
+    ddota = ddota.tocsc() if sp.issparse(ddota) else sp.csc_matrix(ddota)
+    if int(ddota.indptr[m]) == 0:
+        return _wrap()
+
+    perm_arr = (np.ascontiguousarray(Aord["qperm"], dtype=np.int64).ravel() - 1).astype(np.uintp)
+    invperm = np.zeros(m, dtype=np.uintp)
+    invperm[perm_arr] = np.arange(m, dtype=np.uintp)
+
+    dd_pr = np.ascontiguousarray(ddota.data, dtype=np.float64)
+    dd_jc = np.ascontiguousarray(ddota.indptr, dtype=np.uintp)
+    dd_ir = np.ascontiguousarray(ddota.indices, dtype=np.uintp)
+    ddota_struct = JcIr(pr=dd_pr.ctypes.data_as(c_double_p), jc=dd_jc.ctypes.data_as(c_size_t_p),
+                         ir=dd_ir.ctypes.data_as(c_size_t_p))
+    ada_struct = JcIr(pr=ada_pr.ctypes.data_as(c_double_p), jc=ada_jc.ctypes.data_as(c_size_t_p),
+                       ir=ada_ir.ctypes.data_as(c_size_t_p))
+
+    fwork = np.zeros(max(lorN, 1), dtype=np.float64)
+
+    _lib.getada2(
+        ada_struct, ddota_struct,
+        perm_arr.ctypes.data_as(c_size_t_p), invperm.ctypes.data_as(c_size_t_p),
+        m, lorN, fwork.ctypes.data_as(c_double_p),
+    )
+    return _wrap()
+
+
+def getada3(ada, At, Ajc1, Aord: dict, udsqr, K: dict):
+    """(ADA, absd) = getada3(ADA, At, Ajc1, Aord, udsqr, K): ADA(i,j) +=
+    ai'*D(d^2;PSD)*aj on triu(ADA(sperm,sperm)) (a no-op when K has no
+    PSD blocks -- `absd` is then `diag(ADA)` via cpspdiag() instead of
+    the PSD cancellation measure), followed unconditionally by
+    ADA := (ADA+ADA')/2 via spmakesym(). `Ajc1` is `Ablkjc[:, 2]`
+    (0-indexed, partitA()'s 3rd column -- the same array getada1() calls
+    `Ajc2`). `Aord` needs "dz" (sparse lenfull x m, incorder()'s dz
+    output) and "sperm" (1-indexed, incorder()'s perm output). `udsqr`
+    is `_native.invcholfac(d["u"], K, d["perm"])`. Wraps getada3()
+    (getada3.c), dzblkpartit(), cpspdiag(), and spmakesym() exactly as
+    sedumi.m's main loop / getada3.m's mex wrapper does.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    cK = cone_from_dict(K)
+    m = int(At.shape[1])
+    lenud = int(cK.rDim) + int(cK.hDim)
+
+    A = At.tocsc()
+    Apr = np.ascontiguousarray(A.data, dtype=np.float64)
+    Ajc = np.ascontiguousarray(A.indptr, dtype=np.uintp)
+    Air = np.ascontiguousarray(A.indices, dtype=np.uintp)
+    at_struct = JcIr(pr=Apr.ctypes.data_as(c_double_p), jc=Ajc.ctypes.data_as(c_size_t_p),
+                      ir=Air.ctypes.data_as(c_size_t_p))
+
+    udsqr_arr = np.ascontiguousarray(udsqr, dtype=np.float64).ravel()
+    Ajc1_arr = np.ascontiguousarray(Ajc1, dtype=np.uintp).ravel()
+
+    pattern = ada.tocsc()
+    ada_jc = np.ascontiguousarray(pattern.indptr, dtype=np.uintp)
+    ada_ir = np.ascontiguousarray(pattern.indices, dtype=np.uintp)
+    nnz = int(pattern.indptr[m])
+    ada_pr = np.array(pattern.data, dtype=np.float64, copy=True)
+    ada_struct = JcIr(pr=ada_pr.ctypes.data_as(c_double_p), jc=ada_jc.ctypes.data_as(c_size_t_p),
+                       ir=ada_ir.ctypes.data_as(c_size_t_p))
+
+    absd = np.zeros(m, dtype=np.float64)
+
+    perm_arr = (np.ascontiguousarray(Aord["sperm"], dtype=np.int64).ravel() - 1).astype(np.uintp)
+    invperm = np.zeros(m, dtype=np.uintp)
+    invperm[perm_arr] = np.arange(m, dtype=np.uintp)
+
+    sdpN = int(cK.sdpN)
+    if sdpN > 0:
+        blkstart_full = np.ascontiguousarray(K["blkstart"], dtype=np.float64).ravel()
+        offset = int(cK.lorN) + 1
+        blkstart = (blkstart_full[offset : offset + sdpN + 1] - 1).astype(np.uintp)
+
+        dz = Aord["dz"].tocsc()
+        dzstructjc = np.ascontiguousarray(dz.indptr, dtype=np.uintp)
+        dzstructir = np.ascontiguousarray(dz.indices, dtype=np.uintp)
+
+        col_widths = np.diff(dzstructjc.astype(np.int64))
+        maxadd = int(col_widths.max()) if col_widths.size else 0
+        dznnz = int(dzstructjc[m])
+
+        iwsiz = int(np.floor(np.log(1.0 + maxadd) / np.log(2.0))) if maxadd > 0 else 0
+        iwsiz += maxadd + 2
+        iwsiz = 2 * sdpN + dznnz + max(iwsiz, max(int(cK.rMaxn), int(cK.hMaxn)))
+        iwork = np.zeros(max(iwsiz, m), dtype=np.uintp)
+
+        psdNL_arr = np.ascontiguousarray(cK._keepalive[2], dtype=np.float64).astype(np.uintp)
+
+        # xblk[j] = k iff blkstart[k] <= j < blkstart[k+1]; sized to cover
+        # the whole 0:lenfull range (not just blkstart[0]:blkstart[-1])
+        # rather than replicating the real C code's `xblk -= blkstart[0]`
+        # pointer-offset trick -- dzstructir values are always within
+        # [blkstart[0], blkstart[sdpN]) (incorder() only ever emits PSD
+        # row subscripts there), so the unused low range is simply never
+        # read.
+        xblk = np.zeros(int(blkstart[sdpN]), dtype=np.uintp)
+        for k in range(sdpN):
+            xblk[int(blkstart[k]) : int(blkstart[k + 1])] = k
+
+        dzjc = np.zeros(sdpN + 1, dtype=np.uintp)
+        _lib.dzblkpartit(
+            dzjc.ctypes.data_as(c_size_t_p), dzstructir.ctypes.data_as(c_size_t_p),
+            xblk.ctypes.data_as(c_size_t_p), dznnz, sdpN,
+        )
+
+        cwork = np.zeros(max(maxadd, 1), dtype=np.uint8)
+        fwsiz = lenud + 2 * max(int(cK.rMaxn) ** 2, 2 * int(cK.hMaxn) ** 2)
+        fwork = np.zeros(max(fwsiz, 1), dtype=np.float64)
+
+        _lib.getada3(
+            ada_struct, absd.ctypes.data_as(c_double_p), at_struct, udsqr_arr.ctypes.data_as(c_double_p),
+            Ajc1_arr.ctypes.data_as(c_size_t_p), dzjc.ctypes.data_as(c_size_t_p),
+            dzstructjc.ctypes.data_as(c_size_t_p), dzstructir.ctypes.data_as(c_size_t_p),
+            blkstart.ctypes.data_as(c_size_t_p), xblk.ctypes.data_as(c_size_t_p),
+            psdNL_arr.ctypes.data_as(c_size_t_p),
+            perm_arr.ctypes.data_as(c_size_t_p), invperm.ctypes.data_as(c_size_t_p),
+            m, lenud, ctypes.byref(cK),
+            fwork.ctypes.data_as(c_double_p), fwsiz,
+            iwork.ctypes.data_as(c_size_t_p), iwsiz,
+            cwork.ctypes.data_as(c_ubyte_p),
+        )
+    else:
+        iwork = np.zeros(max(m, 1), dtype=np.uintp)
+        _lib.cpspdiag(absd.ctypes.data_as(c_double_p), ada_struct, m)
+
+    _lib.spmakesym(ada_struct, m, iwork.ctypes.data_as(c_size_t_p))
+
+    ADA = sp.csc_matrix(
+        (ada_pr[:nnz], ada_ir[:nnz].astype(np.int64), ada_jc.astype(np.int64)), shape=(m, m)
+    )
+    return ADA, absd
+
+
 _lib.getsplit.argtypes = [c_size_t_p, c_size_t_p, c_size_t_p, c_size_t_p,
                             ctypes.c_size_t, ctypes.c_size_t]
 _lib.getsplit.restype = None

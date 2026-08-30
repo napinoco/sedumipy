@@ -107,4 +107,32 @@ b = full(At' * xfeas);
 c = rand(n,1) - 0.5;
 save_case(out_dir, 'lp_sparse_feasible', At, b, c, K, pars);
 
+% Case 8: LP + one 2x2 PSD block, feasible -- exercises the K.s!=0
+% getada1->getada2->getada3 main-loop branch with no Lorentz cones.
+rand('seed', 507); randn('seed', 507);
+nl = 2; ns = 2; m = 4;
+n = nl + ns^2;
+K = struct('f', 0, 'l', nl, 'q', zeros(1,0), 'r', zeros(1,0), 's', ns);
+Xfeas = [2 0.5; 0.5 2];   % symmetric, strictly PD
+xfeas = [rand(nl,1)+0.1; Xfeas(:)];
+At = rand(n,m) - 0.5;
+b = At' * xfeas;
+c = rand(n,1) - 0.5;
+save_case(out_dir, 'sdp_feasible', At, b, c, K, pars);
+
+% Case 9: LP + Lorentz + two PSD blocks (2x2, 3x3), feasible -- exercises
+% the K.s!=0 branch with every cone type mixed together.
+rand('seed', 508); randn('seed', 508);
+nl = 1; nq = 3; ns1 = 2; ns2 = 3; m = 6;
+n = nl + nq + ns1^2 + ns2^2;
+K = struct('f', 0, 'l', nl, 'q', nq, 'r', zeros(1,0), 's', [ns1, ns2]);
+xq = randn(nq-1,1);
+Xfeas1 = [2 0.3; 0.3 2];                 % symmetric, strictly PD
+Xfeas2 = [3 0.2 0.1; 0.2 3 0.2; 0.1 0.2 3];   % symmetric, strictly PD
+xfeas = [rand(nl,1)+0.1; norm(xq)+0.5; xq; Xfeas1(:); Xfeas2(:)];
+At = rand(n,m) - 0.5;
+b = At' * xfeas;
+c = rand(n,1) - 0.5;
+save_case(out_dir, 'sdp_mixed_cones_feasible', At, b, c, K, pars);
+
 fprintf('sedumi oracle written to %s\n', out_dir);

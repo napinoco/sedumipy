@@ -41,18 +41,21 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 | Phase 3-a | 薄いMEXラッパー`.m`をPython APIとして整備 | **未着手** |
 | Phase 3-b | コーン数学ユーティリティ(eigK, psdeig, psdscale等)移植 | **完了** |
 | Phase 3-c | 内点法の反復制御ロジック(sdinit〜optstep)移植 | **完了** |
-| Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCPスコープ)** |
+| Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
 | Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **未着手** |
 | Phase 5 | 検証・ベンチマーク | **未着手** |
 | Phase 6 | パッケージング・リリース | **未着手** |
 
-Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐)問題に
-限っては完了**しており、実際に `sedumi_port.sedumi.sedumi(A,b,c,K)` を
+Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PSD(半正定値
+錐)問題について完了**しており、実際に `sedumipy.sedumi.sedumi(A,b,c,K)` を
 呼べば Octave 版の SeDuMi と完全一致する解が返ってくることを、実機
-オラクル比較で確認済み(`python_port/tests/test_sedumi.py`)。
+オラクル比較で確認済み(`tests/test_sedumi.py`。PSD錐のメインループ結線は
+`getada_psd.py`(`build_aord`/`getada_psd`、`incorder.py`/`getsymbada.py`/
+`_native.getada1`/`getada2`/`getada3` を使用)、検証は同ファイルの
+`sdp_feasible`/`sdp_mixed_cones_feasible` ケース)。
 
-**ただし PSD 錐(`K.s`)と密列(dense columns)最適化は未対応** で、
-これが現時点でのスコープ上の最大の制約。詳細は §5, §7 参照。
+**ただし密列(dense columns)最適化は未対応** で、これが現時点での
+スコープ上の最大の制約。詳細は §5, §7 参照。
 
 ## 3. ディレクトリ構成
 
@@ -76,7 +79,8 @@ sedumipy/                    # リポジトリルート
       wregion.py                # 1反復分の predictor(+corrector)ステップ本体
       updtransfo.py             # スケーリング点の更新
       maxstep.py / widelen.py / stepdif.py / trydif.py  # ステップ長計算
-      getada.py / getdatm.py / deninfac.py  # ADA行列の構築・分解
+      getada.py / getdatm.py / deninfac.py  # ADA行列の構築・分解(K.s==0)
+      incorder.py / getsymbada.py / getada_psd.py  # ADA行列の構築(K.s!=0)
       symbchol.py                # ADAの記号的コレスキー(一度だけ実行)
       optstep.py                 # LP最適性の早期判定(optstep.m)
       amul.py / checkpars.py     # 補助ユーティリティ
@@ -141,19 +145,6 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
 以下は「気づいていない抜け」ではなく、**意図的に `NotImplementedError`
 で弾いている**制約。理由も含めて各モジュールのdocstringに明記済み。
 
-- **PSD錐(`K.s`)のメインループ対応。** `sedumi.m` 本体のADA更新は
-  `sum(K.s)==0` で分岐しており、この移植(`getada.py`)は `==0` の
-  分岐しか実装していない。`!=0` 側は `getada1`/`getada2`/`getada3`
-  のオーケストレーションが必要だが、**この3つは実際にはまだ
-  ctypesバインディングすら存在しない**(`test_cluster4.py`のスコープ
-  注記の通り、Phase 2クラスタ4では「mexFunction内に計算ロジックが
-  直接書かれていてPhase 3の文脈が要る」として意図的に対象外にされた。
-  過去バージョンの本ドキュメントには「既にctypes化済み」と書かれて
-  いたが、これは誤りだったため訂正した)。加えて `getsymbada.m`
-  (ADAのスパース構造構築、MEX非依存の純MATLABロジック)と
-  `incorder.m`(`incorder.c`は決定的アルゴリズムで`neighborhood.py`
-  と同じ方針で直接Python化できる)も未移植。
-  → `sedumi.py` は `K.s` が非空だと `NotImplementedError` を投げる。
 - **密列(dense columns)最適化。** `getdense.m`(密列検出)、
   `incorder.m`(貪欲順序付け)、`getsymbada.m`、`symbcholden.m` は
   未移植。`dense.cols`/`dense.q` は常に空として扱う。これは**性能
@@ -216,24 +207,21 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
 ## 7. 残っている作業(優先度が高いと思われる順)
 
 1. **Phase 3-a: 薄いMEXラッパー`.m`の公開API整備。** `_native.py` に
-   ctypesバインディングとしてはあるが、`sedumi_port` パッケージの
-   公開APIとして整理されていない関数がないか棚卸しする。
-2. **PSD錐(`K.s`)のメインループ対応。** `getada1`/`getada2`/`getada3`
-   のPython結線 + `Aord`(`sortnnz`/`incorder` ベース)の構築が必要。
-   `incorder.c` はqsort UBを含まない決定的アルゴリズムなので、
-   `neighborhood.py` と同じ方針(Cソースを直接Pythonに書き写す)で
-   移植できるはず(このセッションで既にソースは読んで解析済み、
-   まだファイルには書き出していない)。
-3. **密列(dense columns)最適化。** `getdense.py`/`incorder.py`/
-   `getsymbada.py`/`symbcholden.py` の移植 + `adendotd`/`adenscale`/
-   `dpr1fact` のオーケストレーション。正解性には影響しないため優先度
-   はPSD対応より低い。
-4. **Phase 4: 高レベルAPI・入出力互換層。** `.mat`/SDPA形式の読み書き、
+   ctypesバインディングとしてはあるが、`sedumipy` パッケージの
+   公開APIとして整理されていない関数がないか棚卸しする(PSD対応
+   完了により、`getada1`/`getada2`/`getada3`/`incorder`/`getsymbada`
+   はすでに `getada_psd.py` 経由でパッケージ内から使われているが、
+   それ自体を公開APIとして整理する作業はまだ残っている)。
+2. **密列(dense columns)最適化。** `getdense.py`/`symbcholden.py` の
+   移植 + `adendotd`/`adenscale`/`dpr1fact` のオーケストレーション。
+   正解性には影響しないため優先度は他の項目より低い(`incorder.py`/
+   `getsymbada.py` はPSD対応の一部としてすでに移植済み)。
+3. **Phase 4: 高レベルAPI・入出力互換層。** `.mat`/SDPA形式の読み書き、
    `sedumi()` のPython的に自然なシグネチャ・引数バリエーション対応
    (現状 `sedumi(A,b,c,K,pars=None)` の単純な形のみ)。
-5. **Phase 5: 検証・ベンチマーク。** Phase 0 の golden reference
+4. **Phase 5: 検証・ベンチマーク。** Phase 0 の golden reference
    (`tests/golden/`)に対する網羅的な回帰テスト、性能比較。
-6. **Phase 6: パッケージング。** `cibuildwheel` 等でのwheel化、
+5. **Phase 6: パッケージング。** `cibuildwheel` 等でのwheel化、
    `libsedumi.so` の同梱方法の検討(現状はビルド済みバイナリを
    そのままリポジトリに置いている)。
 

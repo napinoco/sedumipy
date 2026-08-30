@@ -2,18 +2,19 @@
 driver that ties together every other Phase 3-c/3-d piece into one
 solve of MINIMIZE c'*x SUCH THAT A*x=b, x in K.
 
-SCOPE (v1): LP and second-order-cone (Lorentz K.q/K.r -- pretransfo.py
-already folds rotated K.r cones into standard K.q ones) problems only.
-Two restrictions, both inherited from pieces this driver calls rather
-than invented here:
+SCOPE (v1): LP, second-order-cone (Lorentz K.q/K.r -- pretransfo.py
+already folds rotated K.r cones into standard K.q ones), and PSD (K.s)
+problems. sedumi.m's own main loop branches on `sum(K.s)==0` for how it
+rebuilds ADA every iteration: the `==0` branch uses getada.py directly;
+the nonzero branch uses getada_psd.py's build_aord()/getada_psd()
+(getada1->getada2->getada3 orchestration), with its own one-time
+pre-loop Aord/getsymbada/symbchol setup -- real sedumi.m runs that setup
+unconditionally for both branches, but this port's `K.s==0` path keeps
+its existing (already-tested) simpler post-`sdinit` ordering instead of
+being rewritten to match; the two branches genuinely differ here.
 
-  - No PSD blocks: K.s must be empty. sedumi.m's own main loop branches
-    on `sum(K.s)==0` for how it updates ADA every iteration; this port's
-    getada.py implements only that branch (the else branch needs
-    getada1/getada2/getada3 orchestration -- a separate follow-on
-    increment, tracked as such in getada.py's own docstring). Raises
-    NotImplementedError if K.s is nonempty rather than silently
-    answering wrong.
+One restriction remains, inherited from pieces this driver calls rather
+than invented here:
 
   - No dense-column preconditioning: `dense.cols`/`dense.q` are always
     treated as empty, i.e. getdense.m's detection heuristic is not
@@ -44,6 +45,7 @@ from .checkpars import checkpars
 from .cone import asmDxq, frameit, maxeigK, psdscale
 from .deninfac import deninfac
 from .getada import getada
+from .getada_psd import build_aord, getada_psd
 from .getdatm import getDAtm
 from .optstep import optstep
 from .posttransfo import posttransfo
@@ -70,25 +72,28 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None):
     b2 = np.asarray(b2, dtype=np.float64).ravel()
     c2 = np.asarray(c2, dtype=np.float64).ravel()
 
-    if len(K2.get("s", [])):
-        raise NotImplementedError(
-            "sedumi: PSD blocks (K.s nonempty) are not implemented in this "
-            "port yet -- see this module's docstring."
-        )
+    has_psd = len(K2.get("s", [])) > 0
 
     lponly = int(K2["l"]) == len(c2)
     pars = checkpars(pars)
 
     dense = _empty_dense(b2.size)
+    Ablkjc = Aord = None
 
-    d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
+    if has_psd:
+        Ablkjc, Aord, ADA = build_aord(A2, K2)
+        Lsym = symbchol(ADA)
+        symLden = None
+        d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
+    else:
+        d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
+        DAt = getDAtm(A2, dense, d, K2)
+        ADA, _absd0 = getada(A2, K2, d, DAt)
+        Lsym = symbchol(ADA)
+        symLden = None
+
     n = vfrm["lab"].size
     Kl = int(K2["l"])
-
-    DAt = getDAtm(A2, dense, d, K2)
-    ADA0, _absd0 = getada(A2, K2, d, DAt)
-    Lsym = symbchol(ADA0)
-    symLden = None
 
     merit = (float(np.sum(R["w"])) + max(R["sd"], 0.0)) ** 2 * y0 / R["b0"]
 
@@ -113,7 +118,10 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None):
 
         # ---- ADA update + factorization ----
         DAt = getDAtm(A2, dense, d, K2)
-        ADA, absd = getada(A2, K2, d, DAt)
+        if has_psd:
+            ADA, absd = getada_psd(ADA, A2, Ablkjc, Aord, DAt, d, K2)
+        else:
+            ADA, absd = getada(A2, K2, d, DAt)
 
         fact = _native.numeric_cholesky(Lsym, ADA, pars["chol"], absd)
         Lnum = {

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# built native library (compiled on demand by tools/build_libsedumi.sh)
+src/sedumipy/libsedumi.so
+src/sedumipy/libsedumi.dylib

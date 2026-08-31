@@ -66,7 +66,12 @@ def test_optstep_matches_octave():
         "tmpsiz": int(Lmat["tmpsiz"].item()),
     }
     densemat = data["dense"][0, 0]
-    dense = {"cols": densemat["cols"].ravel(), "q": densemat["q"].ravel(), "l": int(densemat["l"].item())}
+    dense = {
+        "cols": densemat["cols"].ravel(),
+        "q": densemat["q"].ravel(),
+        "l": int(densemat["l"].item()),
+        "A": sp.csc_matrix((At2.shape[1], 0)),
+    }
     Rmat = data["R"][0, 0]
     R = {fld: (Rmat[fld].ravel() if Rmat[fld].size > 1 else float(Rmat[fld].item())) for fld in Rmat.dtype.names}
     parsmat = data["pars"][0, 0]

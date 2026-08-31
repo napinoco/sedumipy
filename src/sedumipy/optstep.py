@@ -11,16 +11,18 @@ getada3) is genuine dead code in real SeDuMi, so it isn't ported here;
 raises NotImplementedError if K.q or K.s is nonempty instead of
 silently answering wrong.
 
-The Ablkjc/Aord/ADA_sedumi_ parameters optstep.m takes are also dropped
-from this port's signature: Ablkjc is unused by this port's getDAtm()
-(which doesn't need the extractA-based block-partition table -- see
-getdatm.py), and Aord/ADA_sedumi_ are only used by the unreachable
-getada1/getada2/getada3 branch.
+The Aord/ADA_sedumi_ parameters optstep.m takes are also dropped from
+this port's signature: they're only used by the unreachable
+getada1/getada2/getada3 branch. This LP-only path always has an empty
+dense.q (no Lorentz blocks exist to flag dense), so getDAtm()'s
+Ablkjc/DAtdenq arguments are passed as placeholders (None / an empty
+m x 0 pattern) here -- see getdatm.py.
 """
 
 from __future__ import annotations
 
 import numpy as np
+import scipy.sparse as sp
 
 from . import _native
 from .amul import amul
@@ -57,7 +59,7 @@ def optstep(A, b, c, y0: float, y, d: dict, v, dxmdz, K: dict, L: dict, symLden,
     d["l"] = d["l"].copy()
     d["l"][lpNB] = 0.0
 
-    DAt = getDAtm(A, dense, d, K)
+    DAt = getDAtm(A, None, dense, sp.csc_matrix((b.size, 0)), d, K)
     ADA, absd = getada(A, K, d, DAt)
 
     sym = {"L": L["L"], "perm": L["perm"], "xsuper": L["xsuper"], "tmpsiz": L.get("tmpsiz")}

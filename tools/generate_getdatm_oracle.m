@@ -56,3 +56,28 @@ save('-v7', fullfile(out_dir, 'getdatm.mat'), ...
      'At2', 'K2', 'd', 'dense', 'DAt');
 
 fprintf('getDAtm oracle written to %s\n', out_dir);
+
+%% Second case: same At2/K2/d, but with Lorentz block 1 flagged dense
+%% (dense.q=[1]), exercising the real adendotd()-based DAt.denq
+%% correction and DAt.q(dense.q,:)=0 zeroing -- getDAtm.m's only branch
+%% not covered by the case above.
+%%
+%% K2.mainblks = [3 5 10] (Kl=2 => i1=3; lorN=2 => i2=5), K2.qblkstart =
+%% [5 7 10] (block1 = rows 5:6, block2 = rows 7:9): trace row for block 1
+%% is the single row i1..i2-1 = row 3 (one trace row per Lorentz block,
+%% in block order), block 1's own norm-bound rows are 5:6. So
+%% dense.cols = [3;5;6] (nl=0, nq=1, nden=2), matching the [LP][trace]
+%% [normbound] column order this port's getdense.py/symbcholden.py use.
+dense2.l = 0;
+dense2.q = 1;
+dense2.cols = [3; 5; 6];
+dense2.A = full(At2(dense2.cols, :))';
+dense2.A = sparse(dense2.A);
+DAtdenq2 = sparse(ones(length(b2), 1));  % arbitrary full pattern
+
+DAt2 = getDAtm(At2, Ablkjc, dense2, DAtdenq2, d, K2);
+
+save('-v7', fullfile(out_dir, 'getdatm_dense.mat'), ...
+     'At2', 'K2', 'd', 'dense2', 'DAtdenq2', 'DAt2');
+
+fprintf('getDAtm dense-column oracle written to %s\n', out_dir);

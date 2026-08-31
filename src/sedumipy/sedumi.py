@@ -17,15 +17,18 @@ One restriction remains, inherited from pieces this driver calls rather
 than invented here:
 
   - No dense-column preconditioning: `dense.cols`/`dense.q` are always
-    treated as empty, i.e. getdense.m's detection heuristic is not
-    ported and every column is always factored as "sparse". This is a
+    treated as empty here (via `_empty_dense()` below), i.e. getdense.m's
+    detection heuristic is not yet wired into this driver's pre-loop
+    setup, so every column is always factored as "sparse". This is a
     *performance* optimization in real SeDuMi, not a correctness
     requirement (the underlying A*P(d)*A' linear system is solved
     identically either way, just via a different -- for problems with
     genuinely dense columns, less numerically favorable -- Cholesky
-    conditioning), and every downstream piece this driver calls
-    (getdatm.py, pcg.py, deninfac.py) already raises NotImplementedError
-    on nonempty dense.cols/dense.q, so this is consistent, not a new gap.
+    conditioning). getdatm.py itself now implements the real
+    dense-column correction (DAt.denq via adendotd), but pcg.py/
+    deninfac.py still raise NotImplementedError on nonempty
+    dense.cols/dense.q, so `_empty_dense()` keeps every solve on the
+    already-tested all-sparse path until that wiring lands.
 
 Also not ported (cosmetic/diagnostic, no effect on the returned
 (x,y,info)): the console progress printout (my_fprintf/pars.fid),
@@ -79,6 +82,7 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None):
 
     dense = _empty_dense(b2.size)
     Ablkjc = Aord = None
+    DAtdenq = sp.csc_matrix((b2.size, 0))
 
     if has_psd:
         Ablkjc, Aord, ADA = build_aord(A2, K2)
@@ -87,7 +91,8 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None):
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
     else:
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
-        DAt = getDAtm(A2, dense, d, K2)
+        DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2)
+        DAtdenq = DAt["denq"]
         ADA, _absd0 = getada(A2, K2, d, DAt)
         Lsym = symbchol(ADA)
         symLden = None
@@ -117,7 +122,8 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None):
             pars["stepdif"] = 1
 
         # ---- ADA update + factorization ----
-        DAt = getDAtm(A2, dense, d, K2)
+        DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2)
+        DAtdenq = DAt["denq"]
         if has_psd:
             ADA, absd = getada_psd(ADA, A2, Ablkjc, Aord, DAt, d, K2)
         else:

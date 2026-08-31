@@ -1386,6 +1386,124 @@ _lib.adenscale.argtypes = [
 _lib.adenscale.restype = None
 
 
+def adenscale(dense: dict, d: dict, qblkstart):
+    """smult = adenscale(dense, d, qblkstart): length-nden vector with
+    smult[j] = det(dk) for the Lorentz block k that dense column j (a
+    dense Lorentz norm-bound column) belongs to -- the Woodbury-update
+    scale factor s.t. AP(d)A' = ADA + Ad*diag(smult)*Ad'. `dense` needs
+    "l"/"q"/"cols" (see getdense.py; `dense["cols"][dense["l"]+len(dense["q"]):]`
+    is the dense Lorentz norm-bound column subset this operates on).
+    `d` needs "det" (length len(K["q"]), see sdinit.py/updtransfo.py).
+    `qblkstart` is K["qblkstart"] (1-indexed cumulative boundaries).
+    Wraps adenscale() (adenscale.c) exactly as deninfac.m calls it.
+    """
+    import numpy as np
+
+    qblkstart_arr = np.ascontiguousarray(qblkstart, dtype=np.int64).ravel()
+
+    nl = int(dense["l"])
+    q_field = np.ascontiguousarray(dense["q"], dtype=np.int64).ravel()
+    nq = q_field.size
+    cols = np.ascontiguousarray(dense["cols"], dtype=np.int64).ravel()
+    nden = cols.size - nl - nq
+
+    dencols0 = (cols[nl + nq :] - 1).astype(np.uintp)
+    q0 = (q_field - 1).astype(np.int64)
+    blkend0 = (qblkstart_arr[q0 + 1] - 1).astype(np.uintp)
+    q0 = q0.astype(np.uintp)
+
+    detd = np.ascontiguousarray(d["det"], dtype=np.float64).ravel()
+    smult = np.zeros(max(nden, 1), dtype=np.float64)
+
+    _lib.adenscale(
+        smult.ctypes.data_as(c_double_p), detd.ctypes.data_as(c_double_p),
+        dencols0.ctypes.data_as(c_size_t_p), q0.ctypes.data_as(c_size_t_p),
+        blkend0.ctypes.data_as(c_size_t_p), nq, nden,
+    )
+    return smult[:nden]
+
+
+def adendotd(dense: dict, d: dict, adotd, ablk, qblkstart):
+    """ad = adendotd(dense, d, adotd, ablk, qblkstart): (ai[k]+Adeni[k])'*
+    d[k] for each dense Lorentz block k in dense["q"] -- adds the
+    dense-column contribution (dense["A"]'s trace + norm-bound columns)
+    on top of `adotd`'s sparse-part contribution, filled into `ablk`'s
+    sparsity pattern (a fresh m x nq matrix with that pattern; `ablk`'s
+    own data is ignored/overwritten, only its pattern is reused, matching
+    the mex wrapper's `mxDuplicateArray` semantics). `dense` additionally
+    needs "A" (sparse m x (nl+nq+nden), see getdense.py: first nl columns
+    LP-dense, next nq Lorentz-trace, remaining nden Lorentz-norm-bound).
+    `d` needs "q1"/"q2" (see sdinit.py/updtransfo.py; "q2" is already
+    0-indexed relative to `qblkstart[0]-1`, the same convention used
+    throughout cone.py/updtransfo.py). `adotd` is a sparse m x nq matrix
+    (DAt["q"] restricted to the dense["q"] columns). Wraps adendotd()
+    (adendotd.c) exactly as getDAtm.m calls it.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    qblkstart_arr = np.ascontiguousarray(qblkstart, dtype=np.int64).ravel()
+    firstQ = int(qblkstart_arr[0]) - 1
+
+    nl = int(dense["l"])
+    q_field = np.ascontiguousarray(dense["q"], dtype=np.int64).ravel()
+    nq = q_field.size
+    cols = np.ascontiguousarray(dense["cols"], dtype=np.int64).ravel()
+    nden = cols.size - nl - nq
+
+    dencols0 = (cols[nl + nq :] - 1).astype(np.uintp)
+    q0 = (q_field - 1).astype(np.int64)
+    blkend0 = (qblkstart_arr[q0 + 1] - 1).astype(np.uintp)
+    q0 = q0.astype(np.uintp)
+
+    A = dense["A"].tocsc()
+    m = A.shape[0]
+    aden = A[:, nl : nl + nq + nden].tocsc()
+    aden_pr = np.ascontiguousarray(aden.data, dtype=np.float64)
+    aden_jc = np.ascontiguousarray(aden.indptr, dtype=np.uintp)
+    aden_ir = np.ascontiguousarray(aden.indices, dtype=np.uintp)
+    aden_struct = JcIr(pr=aden_pr.ctypes.data_as(c_double_p), jc=aden_jc.ctypes.data_as(c_size_t_p),
+                        ir=aden_ir.ctypes.data_as(c_size_t_p))
+
+    ADOTD = adotd.tocsc() if sp.issparse(adotd) else sp.csc_matrix(adotd)
+    adotd_pr = np.ascontiguousarray(ADOTD.data, dtype=np.float64)
+    adotd_jc = np.ascontiguousarray(ADOTD.indptr, dtype=np.uintp)
+    adotd_ir = np.ascontiguousarray(ADOTD.indices, dtype=np.uintp)
+    adotd_struct = JcIr(pr=adotd_pr.ctypes.data_as(c_double_p), jc=adotd_jc.ctypes.data_as(c_size_t_p),
+                         ir=adotd_ir.ctypes.data_as(c_size_t_p))
+
+    ABLK = ablk.tocsc() if sp.issparse(ablk) else sp.csc_matrix(ablk)
+    ad_pr = np.zeros(max(int(ABLK.indptr[-1]), 1), dtype=np.float64)
+    ad_jc = np.ascontiguousarray(ABLK.indptr, dtype=np.uintp)
+    ad_ir = np.ascontiguousarray(ABLK.indices, dtype=np.uintp)
+    ad_struct = JcIr(pr=ad_pr.ctypes.data_as(c_double_p), jc=ad_jc.ctypes.data_as(c_size_t_p),
+                      ir=ad_ir.ctypes.data_as(c_size_t_p))
+
+    d1 = np.ascontiguousarray(d["q1"], dtype=np.float64).ravel()
+    # d.c's mexFunction passes `d2 - firstQ` (pointer arithmetic) so that
+    # C's `d2[i]` for a GLOBAL 0-indexed row i reads d["q2"][i-firstQ];
+    # ctypes has no clean way to express a negative-offset pointer, so
+    # instead zero-pad the front of the buffer by firstQ entries and keep
+    # `dencols0` as global (unshifted) subscripts -- d2_padded[i] then
+    # equals d["q2"][i-firstQ] for every i>=firstQ, exactly reproducing
+    # the C pointer's addressing without needing pointer arithmetic.
+    d2 = np.ascontiguousarray(d["q2"], dtype=np.float64).ravel()
+    d2_padded = np.concatenate([np.zeros(firstQ, dtype=np.float64), d2])
+
+    nnz = int(ABLK.indptr[-1])
+    fwork = np.zeros(max(m, 1), dtype=np.float64)
+
+    _lib.adendotd(
+        ad_struct, adotd_struct, aden_struct,
+        d1.ctypes.data_as(c_double_p), d2_padded.ctypes.data_as(c_double_p),
+        q0.ctypes.data_as(c_size_t_p), dencols0.ctypes.data_as(c_size_t_p),
+        blkend0.ctypes.data_as(c_size_t_p), nq, nden, fwork.ctypes.data_as(c_double_p),
+    )
+    return sp.csc_matrix(
+        (ad_pr[:nnz], ad_ir[:nnz].astype(np.int64), ad_jc.astype(np.int64)), shape=(m, nq)
+    )
+
+
 def extractA(At, Ajc_table, blk0: int, blk1, blkstart):
     """Apart = extractA(At, Ajc, blk0, blk1, blkstart): fast row-range
     slice of a sparse matrix At (m columns, transposed convention as
@@ -1977,3 +2095,115 @@ def cone_from_dict(K: dict) -> ConeK:
     # garbage collected.
     cone._keepalive = (q, r, s)
     return cone
+
+
+# symbfwmat() grows its output row-index buffer with mxRealloc() (=
+# realloc(), see sedumi_platform.h) as it fills it in, then shrinks it
+# down to the exact final size at the end -- it must therefore own a
+# buffer allocated via the C allocator family, NOT a numpy-owned buffer
+# (realloc()'ing memory numpy itself allocated would corrupt numpy's own
+# bookkeeping). _libc gives access to the process's already-linked
+# malloc/free (there is no separate libc to load on macOS/Linux -- CDLL(None)
+# resolves symbols already present in the process, which always includes
+# the C runtime).
+_libc = ctypes.CDLL(None)
+_libc.calloc.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
+_libc.calloc.restype = ctypes.c_void_p
+_libc.free.argtypes = [ctypes.c_void_p]
+_libc.free.restype = None
+
+c_size_t_pp = ctypes.POINTER(c_size_t_p)
+
+_lib.snodeCompress.argtypes = [
+    c_size_t_p, c_size_t_p, c_size_t_p, c_size_t_p, c_size_t_p, c_size_t_p,
+    ctypes.c_size_t,
+]
+_lib.snodeCompress.restype = None
+
+_lib.symbfwmat.argtypes = [
+    c_size_t_p, c_size_t_pp, c_size_t_p, c_size_t_p, c_size_t_p,
+    c_size_t_p, c_size_t_p, c_size_t_p, c_size_t_p, c_size_t_p,
+    ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t,
+    c_size_t_p, c_ubyte_p,
+]
+_lib.symbfwmat.restype = None
+
+
+def symbfwblk(L: dict, B):
+    """X = symbfwblk(L, B): symbolic sparsity pattern of `L\\B(L["perm"],:)`
+    -- i.e. which entries of the forward solve with the sparse Cholesky
+    factor `L["L"]` (restricted to `B`'s columns, permuted by `L["perm"]`)
+    could be nonzero, WITHOUT doing any arithmetic (matching
+    `symbfwmat()`'s pure symbolic nature -- every returned entry's value
+    is 1.0). `L` needs "perm" (1-indexed, length m), "L" (sparse m x m
+    Cholesky-factor pattern), "xsuper" (1-indexed supernode boundaries,
+    length nsuper+1) -- exactly the `L` struct `symbchol()`/`sfinit`
+    already produce. `B` is a sparse m x n matrix (only its pattern is
+    read). Wraps symbfwmat() (symbfwblk.c) plus its own snodeCompress()
+    helper, exactly as symbcholden.m's mex wrapper does.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    L_pattern = L["L"].tocsc()
+    m = L_pattern.shape[0]
+    ljc = np.ascontiguousarray(L_pattern.indptr, dtype=np.uintp)
+    lir = np.ascontiguousarray(L_pattern.indices, dtype=np.uintp)
+
+    xsuper0 = (np.ascontiguousarray(L["xsuper"], dtype=np.int64).ravel() - 1).astype(np.uintp)
+    nsuper = xsuper0.size - 1
+
+    perm0 = (np.ascontiguousarray(L["perm"], dtype=np.int64).ravel() - 1).astype(np.uintp)
+    invperm = np.zeros(m, dtype=np.uintp)
+    invperm[perm0] = np.arange(m, dtype=np.uintp)
+
+    B_csc = B.tocsc() if sp.issparse(B) else sp.csc_matrix(B)
+    n = B_csc.shape[1]
+    bjc = np.ascontiguousarray(B_csc.indptr, dtype=np.uintp)
+    bir = np.ascontiguousarray(B_csc.indices, dtype=np.uintp)
+
+    nnzL = int(L_pattern.indptr[m])
+    xlindx = np.zeros(nsuper + 1, dtype=np.uintp)
+    lindx = np.zeros(max(nnzL, 1), dtype=np.uintp)
+    snode = np.zeros(m, dtype=np.uintp)
+
+    _lib.snodeCompress(
+        xlindx.ctypes.data_as(c_size_t_p), lindx.ctypes.data_as(c_size_t_p),
+        snode.ctypes.data_as(c_size_t_p), ljc.ctypes.data_as(c_size_t_p),
+        lir.ctypes.data_as(c_size_t_p), xsuper0.ctypes.data_as(c_size_t_p), nsuper,
+    )
+
+    xjc = np.zeros(n + 1, dtype=np.uintp)
+    snodefrom = np.zeros(max(nsuper, 1), dtype=np.uintp)
+    processed = np.zeros(max(nsuper, 1), dtype=np.uint8)
+
+    # Every column of x=L\b(perm,:) has at most m nonzeros (rows partition
+    # disjointly across supernodes), so m*n is a hard upper bound on the
+    # total nnz -- allocating it up front guarantees symbfwmat() never
+    # needs to grow this buffer, only shrink it at the very end.
+    maxnnz0 = max(m * n, 1)
+    raw = _libc.calloc(maxnnz0, ctypes.sizeof(ctypes.c_size_t))
+    if not raw:
+        raise MemoryError("symbfwblk: calloc failed")
+    xir_ptr = ctypes.cast(raw, c_size_t_p)
+    maxnnz_c = ctypes.c_size_t(maxnnz0)
+
+    try:
+        _lib.symbfwmat(
+            xjc.ctypes.data_as(c_size_t_p), ctypes.byref(xir_ptr), ctypes.byref(maxnnz_c),
+            bjc.ctypes.data_as(c_size_t_p), bir.ctypes.data_as(c_size_t_p),
+            invperm.ctypes.data_as(c_size_t_p), snode.ctypes.data_as(c_size_t_p),
+            xsuper0.ctypes.data_as(c_size_t_p), xlindx.ctypes.data_as(c_size_t_p),
+            lindx.ctypes.data_as(c_size_t_p), nsuper, m, n,
+            snodefrom.ctypes.data_as(c_size_t_p), processed.ctypes.data_as(c_ubyte_p),
+        )
+        final_nnz = int(xjc[n])
+        if final_nnz > 0:
+            xir_out = np.ctypeslib.as_array(xir_ptr, shape=(final_nnz,)).astype(np.int64).copy()
+        else:
+            xir_out = np.zeros(0, dtype=np.int64)
+    finally:
+        _libc.free(ctypes.cast(xir_ptr, ctypes.c_void_p))
+
+    data = np.ones(final_nnz, dtype=np.float64)
+    return sp.csc_matrix((data, xir_out, xjc.astype(np.int64)), shape=(m, n))

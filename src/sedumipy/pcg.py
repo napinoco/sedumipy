@@ -4,15 +4,13 @@ point iteration (sddir.m/sdfactor.m both delegate to wrapPcg), plus
 sparfwslv.m/sparbwslv.m (thin wrappers SeDuMi itself uses around
 fwblkslv/bwblkslv -- i.e. this port's own _native.fwsolve/bwsolve).
 
-SCOPE NOTE: the dense-column preconditioning correction (dense.q/
-DAt.denq, from the Phase 2 "dense columns" subsystem still deferred --
-getada1/getada2/incorder/iswnbr/symbfwblk) is NOT implemented; both
-loopPcg() and wrapPcg() raise NotImplementedError if dense.q or
-dense.cols is nonempty. The Lorentz-cone rank-1 scaling correction
-(DAt.q, from getdatm.py) IS implemented and always applied when
-K.q is nonempty -- unlike the dense-column correction, this one is
-needed for every Lorentz-cone problem, not just ones with dense
-columns (see getdatm.py's own module docstring).
+The dense-column preconditioning correction (dense.q/DAt.denq, from
+deninfac.py's product-form Lden) IS implemented: loopPcg's residual
+update includes the `DAt.denq*DApq(dense.q)` term (loopPcg.m line
+~113-114) alongside the always-applied Lorentz-cone `DAt.q'*DApq` term.
+wrapPcg needs no separate dense-column term of its own -- its residual
+updates go entirely through amul() (already dense-column-aware) and
+loopPcg().
 """
 
 from __future__ import annotations
@@ -95,15 +93,6 @@ def sparbwslv(L: dict, b):
     return _native.bwsolve(L["L"], L["xsuper"], np.array(b, dtype=np.float64, copy=True))
 
 
-def _check_no_dense(dense: dict):
-    cols = np.asarray(dense.get("cols", np.zeros(0))).ravel()
-    if cols.size:
-        raise NotImplementedError(
-            "pcg: dense-column preconditioning (dense.cols nonempty) is not "
-            "implemented -- see this module's docstring."
-        )
-
-
 def _DAy_from_y(At, dense, d, K, y):
     """[sqrt(d.l).*Ap(1:K.l); asmDxq(d,Ap,K); psdscale(d,Ap,K)] for Ap =
     vecsym(Amul(At,dense,y,1),K) -- the common "DA'y" tail shared by
@@ -118,10 +107,10 @@ def loopPcg(L, Lden, At, dense, d, DAt, K, b, p, ssqrNew, cgpars, restol):
     as the (block sparse Cholesky) preconditioner. p=None starts PCG
     from scratch; ssqrNew is only used when p is not None (continuing a
     previous step's search direction)."""
-    _check_no_dense(dense)
     b = np.asarray(b, dtype=np.float64).ravel()
     Kl = int(K["l"])
     lorN = len(K.get("q", []))
+    dense_q = np.asarray(dense.get("q", np.zeros(0))).ravel().astype(np.int64)
 
     k = 0
     r = b.copy()
@@ -165,6 +154,8 @@ def loopPcg(L, Lden, At, dense, d, DAt, K, b, p, ssqrNew, cgpars, restol):
             tmp2 = amul(At, dense, DDAp, transp=False)
             if lorN:
                 tmp2 = tmp2 + DAt["q"].T @ DApq
+                if dense_q.size:
+                    tmp2 = tmp2 + DAt["denq"] @ DApq[dense_q - 1]
             r = r - alpha * tmp2
 
             fiprev = finew
@@ -208,7 +199,6 @@ def wrapPcg(L, Lden, At, dense, d, DAt, K, rb, rv, cgpars, y0):
     be None/empty, matching the .m file's `if ~isempty(rb)` guard), with
     one unconditional CG-preconditioned step followed by refinement
     passes via loopPcg() as needed."""
-    _check_no_dense(dense)
     Kl = int(K["l"])
     restol = y0 * cgpars["restol"]
 

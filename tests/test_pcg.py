@@ -120,3 +120,95 @@ def test_looppcg_matches_octave():
     np.testing.assert_allclose(y_unperm, y_exp, rtol=1e-6, atol=1e-8)
     assert k == int(data["lk"].item())
     np.testing.assert_allclose(DAy, data["lDAy"].ravel(), rtol=1e-6, atol=1e-8)
+
+
+def _load_dense():
+    """Same shape as _load(), but for pcg_dense.mat: a genuine nonempty
+    dense.cols/dense.q and a real (non-trivial) Lden from deninfac.m --
+    exercising loopPcg's new `DAt.denq*DApq(dense.q)` term (Stage 6 of
+    the dense-columns optimization plan) end-to-end, rather than the
+    trivial no-dense-columns Lden.betajc=1 that _load()'s pcg.mat uses."""
+    data = scipy.io.loadmat(FIXTURE_DIR / "pcg_dense.mat")
+    K = _load_K(data["K2"][0, 0])
+    dmat = data["d"][0, 0]
+    d = {fld: dmat[fld].ravel() for fld in dmat.dtype.names}
+    DAtmat = data["DAt"][0, 0]
+    q = DAtmat["q"]
+    DAt = {
+        "q": np.asarray(q.todense() if sp.issparse(q) else q),
+        "denq": sp.csc_matrix(DAtmat["denq"]),
+    }
+    densemat = data["dense"][0, 0]
+    dense = {
+        "l": int(densemat["l"].item()),
+        "q": densemat["q"].ravel().astype(np.int64),
+        "cols": densemat["cols"].ravel().astype(np.int64),
+        "A": sp.csc_matrix(densemat["A"]),
+    }
+    Lmat = data["Lstruct"][0, 0]
+    L = {
+        "L": sp.csc_matrix(Lmat["L"]),
+        "d": Lmat["d"].ravel(),
+        "xsuper": Lmat["xsuper"].ravel().astype(np.int64) - 1,
+    }
+    Ldenmat = data["Ldenstruct"][0, 0]
+    Lden = {
+        "betajc": Ldenmat["betajc"].ravel().astype(np.int64),
+        "beta": Ldenmat["beta"].ravel(),
+        "p": Ldenmat["p"].ravel(),
+        "dopiv": Ldenmat["dopiv"].ravel().astype(np.int64),
+        "pivperm": Ldenmat["pivperm"].ravel().astype(np.int64),
+        "dz": sp.csc_matrix(Ldenmat["dz"]),
+        "first": Ldenmat["first"].ravel().astype(np.int64),
+        "perm": Ldenmat["perm"].ravel().astype(np.int64),
+    }
+    At2z = sp.csc_matrix(data["At2z"])
+    cg = {
+        "qprec": 1,
+        "restol": 5e-3,
+        "stagtol": 5e-14,
+        "maxiter": 49,
+        "refine": 1,
+    }
+    return data, K, d, DAt, dense, L, Lden, At2z, cg
+
+
+def test_wrappcg_dense_matches_octave():
+    data, K, d, DAt, dense, L, Lden, At2z, cg = _load_dense()
+    perm = data["Lstruct"][0, 0]["perm"].ravel().astype(np.int64) - 1
+
+    rb = data["rb"].ravel()
+    rv = data["rv"].ravel()
+    y0 = float(data["y0"].item())
+    maxRb = float(data["R"][0, 0]["maxRb"].item())
+
+    At2z_perm = At2z[:, perm]
+    rb_perm = rb[perm]
+
+    y, dx, k, r = wrapPcg(L, Lden, At2z_perm, dense, d, DAt, K, rb_perm, rv, cg, min(1, y0) * maxRb)
+
+    y_exp = data["wy"].ravel()
+    y_unperm = np.empty_like(y)
+    y_unperm[perm] = y
+    np.testing.assert_allclose(y_unperm, y_exp, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(dx, data["wdx"].ravel(), rtol=1e-6, atol=1e-8)
+    assert k == int(data["wk"].item())
+
+
+def test_looppcg_dense_matches_octave():
+    data, K, d, DAt, dense, L, Lden, At2z, cg = _load_dense()
+    perm = data["Lstruct"][0, 0]["perm"].ravel().astype(np.int64) - 1
+
+    bvec = data["bvec"].ravel()
+    restol = float(data["restol"].item())
+    At2z_perm = At2z[:, perm]
+    bvec_perm = bvec[perm]
+
+    y, k, DAy = loopPcg(L, Lden, At2z_perm, dense, d, DAt, K, bvec_perm, None, 0.0, cg, restol)
+
+    y_exp = data["ly"].ravel()
+    y_unperm = np.empty_like(y)
+    y_unperm[perm] = y
+    np.testing.assert_allclose(y_unperm, y_exp, rtol=1e-6, atol=1e-8)
+    assert k == int(data["lk"].item())
+    np.testing.assert_allclose(DAy, data["lDAy"].ravel(), rtol=1e-6, atol=1e-8)

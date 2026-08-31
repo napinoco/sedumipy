@@ -31,7 +31,7 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 ## 2. 全体のフェーズと現在の進捗
 
 タスク管理ツール(TaskList)にフェーズごとのタスクが登録されている。
-2026-08-30 時点の状況:
+2026-08-31 時点の状況:
 
 | フェーズ | 内容 | 状態 |
 |---|---|---|
@@ -54,8 +54,13 @@ Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PS
 `_native.getada1`/`getada2`/`getada3` を使用)、検証は同ファイルの
 `sdp_feasible`/`sdp_mixed_cones_feasible` ケース)。
 
-**ただし密列(dense columns)最適化は未対応** で、これが現時点での
-スコープ上の最大の制約。詳細は §5, §7 参照。
+**密列(dense columns)最適化も移植済み**(`getdense.py`/`symbcholden.py`/
+`deninfac.py`/`pcg.py`の product-form 前処理補正、`_native.symbfwblk`/
+`adendotd`/`adenscale`/`dpr1fact` のオーケストレーション)。密列を実際に
+含む問題(`tests/test_sedumi.py::test_sedumi_dense_matches_octave`、
+`pars.denf=3` で `getdense.m` の検出閾値を意図的に下げたケース)でも
+Octave版と `iter`/`numerr`/`pinf`/`dinf`/`x` が一致することを確認済み
+(`y` は §6 の「双対解の非一意性」を参照)。
 
 ## 3. ディレクトリ構成
 
@@ -145,15 +150,6 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
 以下は「気づいていない抜け」ではなく、**意図的に `NotImplementedError`
 で弾いている**制約。理由も含めて各モジュールのdocstringに明記済み。
 
-- **密列(dense columns)最適化。** `getdense.m`(密列検出)、
-  `incorder.m`(貪欲順序付け)、`getsymbada.m`、`symbcholden.m` は
-  未移植。`dense.cols`/`dense.q` は常に空として扱う。これは**性能
-  最適化であって正解性には無関係**(密列を分離してもしなくても
-  `A*P(d)*A'` という同じ線形方程式を解くだけ)なので、正解性は
-  損なわれないが、密列を大量に含む問題では収束が遅くなったり数値的に
-  不安定になったりする可能性がある。`getdatm.py`/`pcg.py`/`deninfac.py`
-  が一貫して `dense.cols`/`dense.q` 非空時に `NotImplementedError`
-  を投げるようにしてあるので、grep すればスコープの境界が分かる。
 - **回転2次錐(`K.r`)** は `pretransfo.py` の段階で標準2次錐(`K.q`)に
   変換されるため、それより後段のコードは意識する必要はない
   (`sedumi.py` の検証テストにも回転錐のケースが1つ含まれている)。
@@ -203,6 +199,45 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
   で塞いで良い、という判断をしている。ただし本当に呼び出し元の
   条件を確認してからにすること(推測で「多分デッドコードだろう」で
   済ませない)。
+- **`sparfwslv`/`sparbwslv`(`pcg.py`)は `L.perm` を内部で
+  gather/scatter しなければならない。** 実際の `fwblkslv.c`/
+  `bwblkslv.c` は `y = L\b(L.perm)`(前進代入)/`y(L.perm) = L'\b`
+  (後退代入)というように、呼び出しの内側で `L.perm` によるgather/
+  scatterを行う。密列最適化導入前の版ではこれを省略し、代わりに
+  `loopPcg`/`wrapPcg` を呼ぶ全箇所(テストも含め)で `L.perm` を
+  外側から一貫して手動で適用/解除する形にしていた ―― PCGは
+  「内部のインデックス付け規約が呼び出し全体で自己無矛盾でありさえ
+  すれば」正しい解に収束するため、密列がない(`Lden` が恒等)場合は
+  これでも数値的に正しかった。しかし `deninfac.py` が実際に
+  `L.perm` で `Ad` を並べ替えた**真の**(恒等でない)`Lden` を組み立てる
+  ようになると、`loopPcg` の同じ反復内で `fwdpr1(Lden, sparfwslv(L,r))`
+  のように `Lden` の項と `sparfwslv` の項を合成する際、両者の
+  インデックス規約が食い違って反復が壊れる(`iter` は合っても
+  途中の残差が発散する形で発覚した)。`sparfwslv`/`sparbwslv` 自体を
+  実際のCカーネルと同じgather/scatter付きの実装に直し、
+  `wrapPcg`/`sdfactor.py` 側は本家 `.m` 通り一切パーミュートしない
+  形に戻すことで解決 ―― 「呼び出し側で辻褄合わせをする」workaroundは
+  一見動いても、後から非自明な追加機能(この場合は密列)が入ると
+  壊れる典型例だった。
+- **rank落ちした `At` を使うテストフィクスチャでは双対解 `y` が
+  非一意になる。** `tests/fixtures/sedumi/lp_socp_sdp_dense_feasible.mat`
+  (密列最適化のend-to-endテスト用)は `At` が23行20列で
+  `rank(At)=16`(密列検出の`h`フロアを`NORMDEN=5`に固定するため
+  PSDブロックの背景行密度を`0.02`まで下げた結果、一部の行が構造的に
+  全ゼロになりやすく、シード1〜400を全数探索しても`rank(At)=20`
+  (フルランク)になるケースは1つもなかった)。`At`がフルランクでない
+  等式制約系では、最適双対解 `y` は `At@delta=0` となる任意の
+  `delta` だけずらしても同じ目的関数値・同じ双対スラック
+  (`s=c-At@y`)を与えるため一意に定まらない。Python版とOctave版は
+  `iter`/`numerr`/`pinf`/`dinf` が完全一致し `x` も浮動小数点誤差の
+  範囲内で一致する(=アルゴリズムは同一に動いている)にもかかわらず、
+  `y` は縮退方向に沿って2-ノルムで約5もズレる
+  (`At@(y_py-y_oct)`, `b@(y_py-y_oct)` がともに実質ゼロであることで
+  確認済み)。このため `test_sedumi_dense_matches_octave` では `y` の
+  厳密一致ではなく、双対の実行可能性・最適性(`c-At@y` と `b@y`)を
+  比較する形にしている。**同じ理由で `At` がフルランクとは限らない
+  ランダム生成テストフィクスチャを新規に作る際は、`y` を厳密比較する
+  前に `rank(At)==m` かどうかを確認すること。**
 
 ## 7. 残っている作業(優先度が高いと思われる順)
 
@@ -212,16 +247,12 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
    完了により、`getada1`/`getada2`/`getada3`/`incorder`/`getsymbada`
    はすでに `getada_psd.py` 経由でパッケージ内から使われているが、
    それ自体を公開APIとして整理する作業はまだ残っている)。
-2. **密列(dense columns)最適化。** `getdense.py`/`symbcholden.py` の
-   移植 + `adendotd`/`adenscale`/`dpr1fact` のオーケストレーション。
-   正解性には影響しないため優先度は他の項目より低い(`incorder.py`/
-   `getsymbada.py` はPSD対応の一部としてすでに移植済み)。
-3. **Phase 4: 高レベルAPI・入出力互換層。** `.mat`/SDPA形式の読み書き、
+2. **Phase 4: 高レベルAPI・入出力互換層。** `.mat`/SDPA形式の読み書き、
    `sedumi()` のPython的に自然なシグネチャ・引数バリエーション対応
    (現状 `sedumi(A,b,c,K,pars=None)` の単純な形のみ)。
-4. **Phase 5: 検証・ベンチマーク。** Phase 0 の golden reference
+3. **Phase 5: 検証・ベンチマーク。** Phase 0 の golden reference
    (`tests/golden/`)に対する網羅的な回帰テスト、性能比較。
-5. **Phase 6: パッケージング。** `cibuildwheel` 等でのwheel化、
+4. **Phase 6: パッケージング。** `cibuildwheel` 等でのwheel化、
    `libsedumi.so` の同梱方法の検討(現状はビルド済みバイナリを
    そのままリポジトリに置いている)。
 

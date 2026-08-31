@@ -24,9 +24,14 @@ from .cone import PopK, asmDxq, psdscale
 
 
 def sparfwslv(L: dict, b, ysymb=None):
-    """y = sparfwslv(L,b[,ysymb]): forward-solve y := L\\b (L a blkchol.m-
-    style dict: L["L"] the unit-lower-triangular CSC factor, L["xsuper"]
-    the supernode boundaries).
+    """y = sparfwslv(L,b[,ysymb]): forward-solve y := L\\b(L.perm) (L a
+    blkchol.m-style dict: L["L"] the unit-lower-triangular CSC factor,
+    L["xsuper"] the supernode boundaries, L["perm"] the elimination-order
+    permutation -- 0-indexed in this port). Matches real fwblkslv.c's
+    mexFunction exactly: `b` is gathered by `L["perm"]` (real/original
+    index space -> the storage order L["L"]/L["d"] are expressed in)
+    before forward-substituting; the result is left in storage order (no
+    scatter on the way out -- that's sparbwslv's job on the way back).
 
     _native.fwsolve() mutates its `y` argument IN PLACE (by design, it
     wraps fwblkslv.c's own in-place solve) -- but MATLAB's sparfwslv/
@@ -50,23 +55,16 @@ def sparfwslv(L: dict, b, ysymb=None):
     dense forward-solve (it's a performance optimization, skipping
     supernodes that can't affect the requested output positions, not a
     different computation -- confirmed by reading fwblkslv.c's
-    mexFunction in full). So a sparse `b` is solved here by densifying
-    and forward-solving column-by-column via the same raw fwsolve()
-    kernel, then restricting the result to `ysymb`'s exact (row, col)
-    support.
-
-    No permutation of `b`/`y` by `L["perm"]` is applied anywhere in this
-    function (matching the existing single-column behavior above) --
-    every caller uses sparfwslv/sparbwslv purely as a preconditioner-
-    application step (loopPcg/wrapPcg, and now deninfac's Ad forward-
-    solve feeding dpr1fact), never as an exact direct solve of a
-    specific linear system; see test_pcg.py's module docstring for the
-    full argument for why this is safe.
+    mexFunction in full). So a sparse `b` is solved here by densifying,
+    gathering rows by `L["perm"]`, and forward-solving column-by-column
+    via the same raw fwsolve() kernel, then restricting the result to
+    `ysymb`'s exact (row, col) support.
     """
+    perm = np.asarray(L["perm"], dtype=np.int64).ravel()
     if sp.issparse(b):
         if ysymb is None:
             raise ValueError("sparfwslv: ysymb (3rd argument) is required for sparse b")
-        B = np.asarray(b.todense(), dtype=np.float64)
+        B = np.asarray(b.todense(), dtype=np.float64)[perm, :]
         m, n = B.shape
         Y = np.empty((m, n), dtype=np.float64)
         for j in range(n):
@@ -79,18 +77,27 @@ def sparfwslv(L: dict, b, ysymb=None):
 
     b_arr = np.asarray(b, dtype=np.float64)
     if b_arr.ndim == 1:
-        return _native.fwsolve(L["L"], L["xsuper"], b_arr.copy())
+        return _native.fwsolve(L["L"], L["xsuper"], b_arr[perm].copy())
     m, n = b_arr.shape
+    Bp = b_arr[perm, :]
     Y = np.empty((m, n), dtype=np.float64)
     for j in range(n):
-        Y[:, j] = _native.fwsolve(L["L"], L["xsuper"], np.array(b_arr[:, j], copy=True))
+        Y[:, j] = _native.fwsolve(L["L"], L["xsuper"], np.array(Bp[:, j], copy=True))
     return Y
 
 
 def sparbwslv(L: dict, b):
-    """y = sparbwslv(L,b): backward-solve y := L'\\b. See sparfwslv()'s
-    docstring for why `b` is copied before the in-place native call."""
-    return _native.bwsolve(L["L"], L["xsuper"], np.array(b, dtype=np.float64, copy=True))
+    """y = sparbwslv(L,b): backward-solve y(L.perm) := L'\\b, i.e. `b` is
+    already in storage order (typically straight from sparfwslv/fwdpr1/
+    bwdpr1) and the result is scattered back to real/original index space
+    by `L["perm"]` -- matching real bwblkslv.c's mexFunction exactly. See
+    sparfwslv()'s docstring for why `b` is copied before the in-place
+    native call."""
+    perm = np.asarray(L["perm"], dtype=np.int64).ravel()
+    z = _native.bwsolve(L["L"], L["xsuper"], np.array(b, dtype=np.float64, copy=True))
+    y = np.empty_like(z)
+    y[perm] = z
+    return y
 
 
 def _DAy_from_y(At, dense, d, K, y):

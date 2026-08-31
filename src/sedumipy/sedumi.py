@@ -13,22 +13,14 @@ unconditionally for both branches, but this port's `K.s==0` path keeps
 its existing (already-tested) simpler post-`sdinit` ordering instead of
 being rewritten to match; the two branches genuinely differ here.
 
-One restriction remains, inherited from pieces this driver calls rather
-than invented here:
-
-  - No dense-column preconditioning: `dense.cols`/`dense.q` are always
-    treated as empty here (via `_empty_dense()` below), i.e. getdense.m's
-    detection heuristic is not yet wired into this driver's pre-loop
-    setup, so every column is always factored as "sparse". This is a
-    *performance* optimization in real SeDuMi, not a correctness
-    requirement (the underlying A*P(d)*A' linear system is solved
-    identically either way, just via a different -- for problems with
-    genuinely dense columns, less numerically favorable -- Cholesky
-    conditioning). getdatm.py itself now implements the real
-    dense-column correction (DAt.denq via adendotd), but pcg.py/
-    deninfac.py still raise NotImplementedError on nonempty
-    dense.cols/dense.q, so `_empty_dense()` keeps every solve on the
-    already-tested all-sparse path until that wiring lands.
+Dense-column preconditioning IS wired in: `getdense()` flags a small
+proportion of LP/Lorentz columns as dense right after `pretransfo`,
+those rows are zeroed out of `A2` exactly once (before the pre-loop
+`Aord`/`symbchol`/`symbcholden` setup, the main loop, and the final-tasks
+diagnostics below -- all of which reuse this same permanently-zeroed
+`A2`, matching upstream sedumi.m's own single `A(dense.cols,:) = 0.0`),
+and `symbcholden()` builds the `symLden` structure `deninfac()` needs
+alongside `symbchol()`'s ordinary `Lsym`.
 
 Also not ported (cosmetic/diagnostic, no effect on the returned
 (x,y,info)): the console progress printout (my_fprintf/pars.fid),
@@ -50,23 +42,16 @@ from .deninfac import deninfac
 from .getada import getada
 from .getada_psd import build_aord, getada_psd
 from .getdatm import getDAtm
+from .getdense import getdense
 from .optstep import optstep
 from .posttransfo import posttransfo
 from .pretransfo import pretransfo
 from .sdfactor import sdfactor
 from .sdinit import sdinit
 from .symbchol import symbchol
+from .symbcholden import symbcholden
 from .updtransfo import updtransfo
 from .wregion import wregion
-
-
-def _empty_dense(m: int) -> dict:
-    return {
-        "cols": np.zeros(0, dtype=np.int64),
-        "q": np.zeros(0, dtype=np.int64),
-        "l": 0,
-        "A": sp.csc_matrix((m, 0)),
-    }
 
 
 def sedumi(A, b, c, K: dict, pars: dict | None = None):
@@ -80,22 +65,35 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None):
     lponly = int(K2["l"]) == len(c2)
     pars = checkpars(pars)
 
-    dense = _empty_dense(b2.size)
-    Ablkjc = Aord = None
-    DAtdenq = sp.csc_matrix((b2.size, 0))
+    # ---- Remove dense columns (if any) -- sedumi.m lines ~352-364. This
+    # zeroing of A2 happens exactly once, here, and the same A2 is reused
+    # for the rest of this function (pre-loop setup, main loop, and the
+    # final-tasks diagnostics), matching upstream's single A(dense.cols,:)
+    # = 0.0 assignment.
+    Ablkjc = _native.partitA(A2, K2["mainblks"])
+    dense, DAtdenq = getdense(A2, Ablkjc, K2, pars)
+    if dense["cols"].size:
+        dense["A"] = A2.tocsc()[dense["cols"] - 1, :].T.tocsc()
+        A2 = A2.tolil()
+        A2[dense["cols"] - 1, :] = 0.0
+        A2 = A2.tocsc()
+        Ablkjc = _native.partitA(A2, K2["mainblks"])
+    else:
+        dense["A"] = sp.csc_matrix((b2.size, 0))
 
     if has_psd:
-        Ablkjc, Aord, ADA = build_aord(A2, K2)
+        Ablkjc, Aord, ADA = build_aord(A2, K2, dense)
         Lsym = symbchol(ADA)
-        symLden = None
+        symLden = symbcholden(Lsym, dense, {"denq": DAtdenq})
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
     else:
+        Aord = None
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
         DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2)
         DAtdenq = DAt["denq"]
         ADA, _absd0 = getada(A2, K2, d, DAt)
         Lsym = symbchol(ADA)
-        symLden = None
+        symLden = symbcholden(Lsym, dense, DAt)
 
     n = vfrm["lab"].size
     Kl = int(K2["l"])

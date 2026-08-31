@@ -59,6 +59,7 @@ def _load():
         "L": sp.csc_matrix(Lmat["L"]),
         "d": Lmat["d"].ravel(),
         "xsuper": Lmat["xsuper"].ravel().astype(np.int64) - 1,
+        "perm": Lmat["perm"].ravel().astype(np.int64) - 1,
     }
     Lden = {"betajc": np.array([1])}
     At2 = sp.csc_matrix(data["At2"])

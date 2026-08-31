@@ -55,6 +55,7 @@ def _load():
         "L": sp.csc_matrix(Lmat["L"]),
         "d": Lmat["d"].ravel(),
         "xsuper": Lmat["xsuper"].ravel().astype(np.int64) - 1,
+        "perm": Lmat["perm"].ravel().astype(np.int64) - 1,
     }
     Lden = {"betajc": np.array([1])}
     At2 = sp.csc_matrix(data["At2"])
@@ -71,53 +72,38 @@ def _load():
 def test_wrappcg_matches_octave():
     # L.L/L.d (from blkchol) factor ADA(perm,perm), not ADA itself
     # (`ADA(L.perm,L.perm) = L.L*diag(L.d)*L.L'`, per sedumi.m's own
-    # comment) -- wrapPcg.m/loopPcg.m never reference L.perm themselves,
-    # so real SeDuMi applies this permutation ONCE, up front, to the
-    # whole m-dimensional constraint space (At's columns, b, y) for the
-    # entire algorithm, never un-permuting until the very end. Since this
-    # test drives wrapPcg/loopPcg directly (not through a full sedumi.m
-    # setup), it reproduces that by permuting At2's columns and rb going
-    # in, and un-permuting y coming out -- exactly the same convention
-    # test_sparse_solve_pipeline.py already uses for fwsolve/bwsolve.
+    # comment) -- wrapPcg.m/loopPcg.m never reference L.perm themselves
+    # because sparfwslv/sparbwslv (real fwblkslv.c/bwblkslv.c, and this
+    # port's pcg.sparfwslv/sparbwslv) apply L.perm internally: sparfwslv
+    # gathers its input by L.perm before forward-substituting, sparbwslv
+    # scatters its output by L.perm after backward-substituting. So At2/
+    # rb/y are passed through in ordinary (real/original) index space,
+    # exactly matching sdfactor.py's actual (unpermuted) call to wrapPcg.
     data, K, d, DAt, dense, L, Lden, At2, cg = _load()
-    perm = data["Lstruct"][0, 0]["perm"].ravel().astype(np.int64) - 1
 
     rb = data["rb"].ravel()
     rv = data["rv"].ravel()
     y0 = float(data["y0"].item())
     maxRb = float(data["R"][0, 0]["maxRb"].item())
 
-    # At2's columns (the constraint/m-space) and rb must be permuted the
-    # same way ADA was before being factored, since L.L/L.d are the
-    # Cholesky factors of ADA(perm,perm) -- see the module-level note.
-    At2_perm = At2[:, perm]
-    rb_perm = rb[perm]
-
-    y, dx, k, r = wrapPcg(L, Lden, At2_perm, dense, d, DAt, K, rb_perm, rv, cg, min(1, y0) * maxRb)
+    y, dx, k, r = wrapPcg(L, Lden, At2, dense, d, DAt, K, rb, rv, cg, min(1, y0) * maxRb)
 
     y_exp = data["wy"].ravel()
-    y_unperm = np.empty_like(y)
-    y_unperm[perm] = y
-    np.testing.assert_allclose(y_unperm, y_exp, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(y, y_exp, rtol=1e-6, atol=1e-8)
     np.testing.assert_allclose(dx, data["wdx"].ravel(), rtol=1e-6, atol=1e-8)
     assert k == int(data["wk"].item())
 
 
 def test_looppcg_matches_octave():
     data, K, d, DAt, dense, L, Lden, At2, cg = _load()
-    perm = data["Lstruct"][0, 0]["perm"].ravel().astype(np.int64) - 1
 
     bvec = data["bvec"].ravel()
     restol = float(data["restol"].item())
-    At2_perm = At2[:, perm]
-    bvec_perm = bvec[perm]
 
-    y, k, DAy = loopPcg(L, Lden, At2_perm, dense, d, DAt, K, bvec_perm, None, 0.0, cg, restol)
+    y, k, DAy = loopPcg(L, Lden, At2, dense, d, DAt, K, bvec, None, 0.0, cg, restol)
 
     y_exp = data["ly"].ravel()
-    y_unperm = np.empty_like(y)
-    y_unperm[perm] = y
-    np.testing.assert_allclose(y_unperm, y_exp, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(y, y_exp, rtol=1e-6, atol=1e-8)
     assert k == int(data["lk"].item())
     np.testing.assert_allclose(DAy, data["lDAy"].ravel(), rtol=1e-6, atol=1e-8)
 
@@ -150,6 +136,7 @@ def _load_dense():
         "L": sp.csc_matrix(Lmat["L"]),
         "d": Lmat["d"].ravel(),
         "xsuper": Lmat["xsuper"].ravel().astype(np.int64) - 1,
+        "perm": Lmat["perm"].ravel().astype(np.int64) - 1,
     }
     Ldenmat = data["Ldenstruct"][0, 0]
     Lden = {
@@ -175,40 +162,29 @@ def _load_dense():
 
 def test_wrappcg_dense_matches_octave():
     data, K, d, DAt, dense, L, Lden, At2z, cg = _load_dense()
-    perm = data["Lstruct"][0, 0]["perm"].ravel().astype(np.int64) - 1
 
     rb = data["rb"].ravel()
     rv = data["rv"].ravel()
     y0 = float(data["y0"].item())
     maxRb = float(data["R"][0, 0]["maxRb"].item())
 
-    At2z_perm = At2z[:, perm]
-    rb_perm = rb[perm]
-
-    y, dx, k, r = wrapPcg(L, Lden, At2z_perm, dense, d, DAt, K, rb_perm, rv, cg, min(1, y0) * maxRb)
+    y, dx, k, r = wrapPcg(L, Lden, At2z, dense, d, DAt, K, rb, rv, cg, min(1, y0) * maxRb)
 
     y_exp = data["wy"].ravel()
-    y_unperm = np.empty_like(y)
-    y_unperm[perm] = y
-    np.testing.assert_allclose(y_unperm, y_exp, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(y, y_exp, rtol=1e-6, atol=1e-8)
     np.testing.assert_allclose(dx, data["wdx"].ravel(), rtol=1e-6, atol=1e-8)
     assert k == int(data["wk"].item())
 
 
 def test_looppcg_dense_matches_octave():
     data, K, d, DAt, dense, L, Lden, At2z, cg = _load_dense()
-    perm = data["Lstruct"][0, 0]["perm"].ravel().astype(np.int64) - 1
 
     bvec = data["bvec"].ravel()
     restol = float(data["restol"].item())
-    At2z_perm = At2z[:, perm]
-    bvec_perm = bvec[perm]
 
-    y, k, DAy = loopPcg(L, Lden, At2z_perm, dense, d, DAt, K, bvec_perm, None, 0.0, cg, restol)
+    y, k, DAy = loopPcg(L, Lden, At2z, dense, d, DAt, K, bvec, None, 0.0, cg, restol)
 
     y_exp = data["ly"].ravel()
-    y_unperm = np.empty_like(y)
-    y_unperm[perm] = y
-    np.testing.assert_allclose(y_unperm, y_exp, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(y, y_exp, rtol=1e-6, atol=1e-8)
     assert k == int(data["lk"].item())
     np.testing.assert_allclose(DAy, data["lDAy"].ravel(), rtol=1e-6, atol=1e-8)

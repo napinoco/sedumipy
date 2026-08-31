@@ -15,12 +15,15 @@ from .getsymbada import getsymbada
 from .incorder import incorder
 
 
-def build_aord(A, K: dict):
-    """Ablkjc, Aord, symbada = build_aord(A, K): the one-time setup real
-    sedumi.m does before its main loop starts (before `symbchol`).
-    `dense.q`'s zeroing-out of `DAt.q` rows is not ported -- always a
-    no-op in this port, since `sedumi.py` always uses an empty `dense`
-    (see its module docstring).
+def build_aord(A, K: dict, dense: dict | None = None):
+    """Ablkjc, Aord, symbada = build_aord(A, K, dense=None): the one-time
+    setup real sedumi.m does before its main loop starts (before
+    `symbchol`). `dense["q"]` (1-indexed, local Lorentz-block numbering --
+    see getdense.py's module docstring) has its rows zeroed out of the
+    pre-loop `DAt.q` sparsity pattern before it feeds `Aord["qperm"]`/
+    `getsymbada`, matching upstream sedumi.m's `DAt.q(dense.q,:) = 0.0`
+    (lines ~366-369) -- `dense=None`/empty reproduces the old no-op
+    behavior exactly.
 
     `Aord` has "lqperm", "qperm", "sperm" (1-indexed permutations),
     "dz" (incorder()'s covered-subscript output), and "q_pattern" (the
@@ -42,13 +45,20 @@ def build_aord(A, K: dict):
     if lorN:
         qblkstart = np.asarray(K["qblkstart"], dtype=np.int64).ravel()
         q_pattern = _native.findblks(A, Ablkjc, 2, 3, qblkstart)
-        if q_pattern.nnz:
-            Alp = _native.extractA(A, Ablkjc, 1, 2, (int(mainblks[0]), int(mainblks[1])))
-            Alp.data[:] = 1.0
-            q_pattern = (q_pattern + Alp).tocsc()
-            Aord["qperm"] = _native.sortnnz(q_pattern, None, None)
-        else:
-            Aord["qperm"] = np.arange(1, m + 1, dtype=np.int64)
+        dense_q = np.asarray(dense["q"]).ravel().astype(np.int64) if dense else np.zeros(0, dtype=np.int64)
+        if dense_q.size:
+            q_pattern = q_pattern.tolil()
+            q_pattern[dense_q - 1, :] = 0.0
+            q_pattern = q_pattern.tocsc()
+        # NB: upstream's `if ~isempty(DAt.q)` tests MATLAB isempty() (zero
+        # rows/cols), which is already guaranteed false here since lorN>0
+        # gives q_pattern lorN rows -- it is NOT a `nnz>0` check, so the
+        # Alp-augmented sortnnz below must run unconditionally, even when
+        # dense.q's zeroing above has driven q_pattern's own nnz to 0.
+        Alp = _native.extractA(A, Ablkjc, 1, 2, (int(mainblks[0]), int(mainblks[1])))
+        Alp.data[:] = 1.0
+        q_pattern = (q_pattern + Alp).tocsc()
+        Aord["qperm"] = _native.sortnnz(q_pattern, None, None)
     else:
         Aord["qperm"] = np.arange(1, m + 1, dtype=np.int64)
     Aord["q_pattern"] = q_pattern

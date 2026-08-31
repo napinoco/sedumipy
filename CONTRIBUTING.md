@@ -38,7 +38,7 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 | Phase 0 | 検証基盤(Octave実機でgolden reference取得) | **完了** |
 | Phase 1 | Cカーネルのmex依存除去→独立Cライブラリ化 | **完了** |
 | Phase 2 | Pythonバインディング(ctypes)構築 (クラスタ1〜5) | **完了** |
-| Phase 3-a | 薄いMEXラッパー`.m`をPython APIとして整備 | **未着手** |
+| Phase 3-a | 薄いMEXラッパー`.m`をPython APIとして整備 | **完了** |
 | Phase 3-b | コーン数学ユーティリティ(eigK, psdeig, psdscale等)移植 | **完了** |
 | Phase 3-c | 内点法の反復制御ロジック(sdinit〜optstep)移植 | **完了** |
 | Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
@@ -241,12 +241,28 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
 
 ## 7. 残っている作業(優先度が高いと思われる順)
 
-1. **Phase 3-a: 薄いMEXラッパー`.m`の公開API整備。** `_native.py` に
-   ctypesバインディングとしてはあるが、`sedumipy` パッケージの
-   公開APIとして整理されていない関数がないか棚卸しする(PSD対応
-   完了により、`getada1`/`getada2`/`getada3`/`incorder`/`getsymbada`
-   はすでに `getada_psd.py` 経由でパッケージ内から使われているが、
-   それ自体を公開APIとして整理する作業はまだ残っている)。
+1. ~~**Phase 3-a: 薄いMEXラッパー`.m`の公開API整備。**~~ **完了。**
+   `install_sedumi.m` のMEXビルド対象一覧と `_native.py` の全バインディング
+   を突き合わせて棚卸しした結果:実際に使われている実MEXカーネルは
+   全て `_native.py` に集約済みで、それぞれ然るべき上位モジュール
+   (`getdense.py`/`getdatm.py`/`pcg.py`/`cone.py`/`updtransfo.py`/
+   `wregion.py`/`sdinit.py`/`getada_psd.py`/`symbchol.py`/
+   `symbcholden.py` 等)から `_native.xxx()` の形で呼ばれており、
+   「バインディングはあるが未整理」という抜けは見つからなかった
+   (`incorder`/`iswnbr` の2つだけは qsortの未定義動作を避けるため
+   意図的にctypes化せず `incorder.py`/`neighborhood.py` にPython実装
+   として存在する、既知の意図的な設計)。
+   逆に `_native.py` 内で他から一切呼ばれていないバインディングが
+   7個(`realdot`/`realssqr`/`scalarmul`/`addscalarmul`/`blkmul`/
+   `mJdetd`/`cholsplit`)見つかったが、いずれも「本家SeDuMi自身に
+   おいても未使用」と確認済み(`blkmul.c`/`mJdetd.c`は
+   `install_sedumi.m`のMEXビルド対象リストにそもそも入っていない
+   =本家の時点でデッドコード、`cholsplit()`の出力`L.split`は
+   `blkchol.c`のmex引数リストに現れず本家でも読まれていない、
+   `realdot`等はBLAS的な補助関数でPhase 1のスモークテスト用に
+   バインドされただけで独立したMEXターゲットを持たない)。
+   結論として追加実装は不要と判断し、`_native.py` モジュール
+   docstringにこの棚卸し結果自体を明記した(未使用の理由を含む)。
 2. **Phase 4: 高レベルAPI・入出力互換層。** `.mat`/SDPA形式の読み書き、
    `sedumi()` のPython的に自然なシグネチャ・引数バリエーション対応
    (現状 `sedumi(A,b,c,K,pars=None)` の単純な形のみ)。

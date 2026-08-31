@@ -1,10 +1,47 @@
 """ctypes bindings over libsedumi.so (the Phase 1 standalone C library).
 
-This is a Phase 2 starting slice, not the final binding surface: it wires
-up a handful of kernels (the cone-descriptor parser and a few BLAS-backed
-vector primitives) end to end, in the exact layout the C structs use, to
-prove the approach before the remaining ~150 exported kernels are wired
-up the same way as Phase 3 needs them.
+Per this project's own coding convention (see CONTRIBUTING.md section 9),
+every C kernel call in this port goes through this module -- other
+modules reach the C library only via `_native.xxx`, never directly. This
+is the final binding surface (Phase 2's cluster 1-5 work, completed):
+every MEX target that real SeDuMi's `install_sedumi.m` actually builds
+has a binding here, wired into the higher-level module that needs it
+(getdense.py, getdatm.py, pcg.py, cone.py, updtransfo.py, wregion.py,
+sdinit.py, getada_psd.py, symbchol.py, symbcholden.py, ...) -- see each
+binding's own docstring for its `.c`/`.m` source and its callers.
+
+Two of `install_sedumi.m`'s MEX targets are deliberately NOT bound here
+via ctypes, and live as pure-Python reimplementations elsewhere instead
+(`incorder.py`, `neighborhood.py`): `incorder.c` and `iswnbr.c` both feed
+a `qsort()` comparator cast to the wrong function-pointer type (undefined
+behavior in C), which was confirmed to actually produce build-dependent
+orderings -- see `neighborhood.py`'s and `incorder.py`'s own docstrings.
+`sortnnz` below has the same issue but stays in this module as a
+pure-Python function (no `_lib.sortnnz` call) rather than moving out,
+since it's a simple sort with no separate state to manage.
+
+A handful of bindings in this module are intentionally unused by the
+rest of this port -- this was confirmed by checking each one against
+`install_sedumi.m`'s build list and, where relevant, its actual mex
+argument list, not just by grepping this port's own callers:
+
+- `realdot`/`realssqr`/`scalarmul`/`addscalarmul`: generic BLAS-like
+  helpers (sdmauxRdot.c/sdmauxScalarmul.c) with no `.m` wrapper or MEX
+  target of their own in real SeDuMi -- they're linked into many other
+  kernels' object code, not independently callable there either. Bound
+  here from the Phase 1 kernel smoke test (kernel_smoke/smoke_test.c);
+  this port's own algorithm code just uses NumPy directly for these
+  trivial vectorized ops instead of round-tripping through ctypes.
+- `blkmul` and `mJdetd`: their `.c` files exist in csrc/ but neither
+  `blkmul.c` nor `mJdetd.c` appears anywhere in `install_sedumi.m`'s MEX
+  build list -- they are dead code in real upstream SeDuMi itself (no
+  `.m` file ever calls them), not a gap in this port.
+- `cholsplit`: real `symbchol.m` does call `cholsplit()` and store the
+  result as `L.split`, but no other real `.m`/`.c` file ever reads
+  `L.split` back (confirmed via `blkchol.c`'s own mex argument list,
+  which reads `L.perm`/`L.L`/`L.xsuper`/`L.tmpsiz` but not `L.split`) --
+  so it's vestigial in real SeDuMi too, and omitting its call from
+  `symbchol.py` doesn't change any result.
 
 Struct layouts (SedumiKRaw, ConeK) are hand-mirrored from blksdp.h and
 must be kept in sync with it field-for-field, in declaration order --

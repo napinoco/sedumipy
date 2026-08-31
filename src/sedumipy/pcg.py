@@ -18,16 +18,17 @@ columns (see getdatm.py's own module docstring).
 from __future__ import annotations
 
 import numpy as np
+import scipy.sparse as sp
 
 from . import _native
 from .amul import amul
 from .cone import PopK, asmDxq, psdscale
 
 
-def sparfwslv(L: dict, b):
-    """y = sparfwslv(L,b): forward-solve y := L\\b (L a blkchol.m-style
-    dict: L["L"] the unit-lower-triangular CSC factor, L["xsuper"] the
-    supernode boundaries).
+def sparfwslv(L: dict, b, ysymb=None):
+    """y = sparfwslv(L,b[,ysymb]): forward-solve y := L\\b (L a blkchol.m-
+    style dict: L["L"] the unit-lower-triangular CSC factor, L["xsuper"]
+    the supernode boundaries).
 
     _native.fwsolve() mutates its `y` argument IN PLACE (by design, it
     wraps fwblkslv.c's own in-place solve) -- but MATLAB's sparfwslv/
@@ -39,8 +40,53 @@ def sparfwslv(L: dict, b):
     `Lr = fwdpr1(Lden, sparfwslv(L, r))`, then using the now-mutated `r`
     again for `rnew = r - alpha*tmp2`) is exactly what caused this
     port's first loopPcg/wrapPcg oracle mismatch.
+
+    `b` may also be a 2-D dense array or a scipy-sparse matrix (multiple
+    right-hand-side columns at once) -- the shape deninfac.py's
+    `sparfwslv(L, Ad, symLden.LAD)` call needs to forward-solve the
+    dense-column matrix `Ad` through `L`. Real fwblkslv.c's own MEX
+    wrapper handles a sparse `b` with a dedicated sparsity-aware
+    selfwsolve() kernel that needs a 3rd argument `y` (here: `ysymb`)
+    giving the *exact sparsity pattern* of the output -- but restricted
+    to that pattern, selfwsolve()'s VALUES are identical to an ordinary
+    dense forward-solve (it's a performance optimization, skipping
+    supernodes that can't affect the requested output positions, not a
+    different computation -- confirmed by reading fwblkslv.c's
+    mexFunction in full). So a sparse `b` is solved here by densifying
+    and forward-solving column-by-column via the same raw fwsolve()
+    kernel, then restricting the result to `ysymb`'s exact (row, col)
+    support.
+
+    No permutation of `b`/`y` by `L["perm"]` is applied anywhere in this
+    function (matching the existing single-column behavior above) --
+    every caller uses sparfwslv/sparbwslv purely as a preconditioner-
+    application step (loopPcg/wrapPcg, and now deninfac's Ad forward-
+    solve feeding dpr1fact), never as an exact direct solve of a
+    specific linear system; see test_pcg.py's module docstring for the
+    full argument for why this is safe.
     """
-    return _native.fwsolve(L["L"], L["xsuper"], np.array(b, dtype=np.float64, copy=True))
+    if sp.issparse(b):
+        if ysymb is None:
+            raise ValueError("sparfwslv: ysymb (3rd argument) is required for sparse b")
+        B = np.asarray(b.todense(), dtype=np.float64)
+        m, n = B.shape
+        Y = np.empty((m, n), dtype=np.float64)
+        for j in range(n):
+            Y[:, j] = _native.fwsolve(L["L"], L["xsuper"], np.array(B[:, j], copy=True))
+        ysymb_csc = ysymb.tocsc()
+        rows = ysymb_csc.indices
+        cols = np.repeat(np.arange(n), np.diff(ysymb_csc.indptr))
+        data = Y[rows, cols]
+        return sp.csc_matrix((data, rows.copy(), ysymb_csc.indptr.copy()), shape=(m, n))
+
+    b_arr = np.asarray(b, dtype=np.float64)
+    if b_arr.ndim == 1:
+        return _native.fwsolve(L["L"], L["xsuper"], b_arr.copy())
+    m, n = b_arr.shape
+    Y = np.empty((m, n), dtype=np.float64)
+    for j in range(n):
+        Y[:, j] = _native.fwsolve(L["L"], L["xsuper"], np.array(b_arr[:, j], copy=True))
+    return Y
 
 
 def sparbwslv(L: dict, b):

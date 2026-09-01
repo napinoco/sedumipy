@@ -16,6 +16,13 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
 
+[tool.pytest.ini_options]
+markers = [
+    "mini: fastest handful of tests/test_benchmarks.py's SDPLIB/DIMACS problems, safe to run on every commit",
+    "timing: tests/test_benchmarks.py problems this port solves in well under a minute",
+    "extended: slow tests/test_benchmarks.py problems (DIMACS copo23, hamming_9_8, TORUS) -- minutes, not for routine runs",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["sedumipy*"]

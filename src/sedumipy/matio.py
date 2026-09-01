@@ -26,6 +26,9 @@ vendor/sedumi-upstream/examples/*.mat all use "At"):
 
 from __future__ import annotations
 
+import gzip
+import os
+
 import numpy as np
 import scipy.io
 import scipy.sparse as sp
@@ -33,14 +36,21 @@ import scipy.sparse as sp
 
 def _unwrap_K(Kmat) -> dict:
     """Kmat: a scipy.io.loadmat (1,1) structured-array K struct. "f"/"l"
-    (if present) come back as a plain Python int; every other field
-    (K.q, K.r, K.s, K.xcomplex, ...) stays a flat NumPy array even when
-    it has just one element (a single Lorentz/PSD block) -- matching
-    pretransfo.py's/checkpars.py's own expectations."""
+    (if present) come back as a plain Python int -- including the empty-
+    array case (an explicit-but-empty K.f/K.l field, as some real-world
+    .mat files store for "no such block", e.g. DIMACS's truss5.mat.gz),
+    which unwraps to 0 rather than staying an empty array (pretransfo.py's
+    `K.get("l", 0) or 0` raises on an empty array's ambiguous truth
+    value). Every other field (K.q, K.r, K.s, K.xcomplex, ...) stays a
+    flat NumPy array even when it has just one element (a single
+    Lorentz/PSD block) -- matching pretransfo.py's/checkpars.py's own
+    expectations."""
     K = {}
     for fld in Kmat.dtype.names:
         val = Kmat[fld]
-        K[fld] = int(val.item()) if (val.size == 1 and fld in ("f", "l")) else val.ravel()
+        K[fld] = int(val.item()) if (val.size == 1 and fld in ("f", "l")) else (
+            0 if (val.size == 0 and fld in ("f", "l")) else val.ravel()
+        )
     return K
 
 
@@ -56,7 +66,21 @@ def read_mat(path):
     whichever orientation the file used) -- sedumi() accepts either.
     `pars` is `{}` if the file has no "pars" field (SeDuMi problem files
     saved from real examples, like vendor/sedumi-upstream/examples/*.mat,
-    normally don't)."""
+    normally don't).
+
+    A `path` (str/os.PathLike) ending in ".gz" is transparently
+    gunzipped first -- public SeDuMi-format problem collections such as
+    DIMACS's examples/dimacs/data/*/*.mat.gz ship gzip-compressed, and
+    scipy.io.loadmat's own gzip auto-detection does not reliably trigger
+    on every real .mat.gz file (confirmed against DIMACS's own data: it
+    raises "Unknown mat file type" on some of them despite the file
+    being a perfectly valid gzip stream). Passing an already-open
+    file-like object (e.g. from gzip.open() directly) is unaffected --
+    scipy.io.loadmat has always accepted those."""
+    if isinstance(path, (str, os.PathLike)) and str(path).endswith(".gz"):
+        with gzip.open(path, "rb") as f:
+            return read_mat(f)
+
     data = scipy.io.loadmat(path)
 
     if "At" in data:

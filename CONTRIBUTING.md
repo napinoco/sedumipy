@@ -44,7 +44,7 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 | Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
 | Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **完了** |
 | Phase 5 | 検証・ベンチマーク | **完了** |
-| Phase 6 | パッケージング・リリース | **未着手** |
+| Phase 6 | パッケージング・リリース | **一部完了(wheelビルド自体は動作確認済み、manylinux/CI上での検証は未着手)** |
 
 Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PSD(半正定値
 錐)問題について完了**しており、実際に `sedumipy.sedumi.sedumi(A,b,c,K)` を
@@ -119,6 +119,7 @@ sedumipy/                    # リポジトリルート
     generate_*_oracle.m        # 各テストのオラクルを vendor/sedumi-upstream の Octave/MEXビルドで生成するスクリプト
     build_libsedumi.sh         # csrc/ から libsedumi.so をビルドするスクリプト
   pyproject.toml
+  setup.py                      # Phase 6: wheelビルド時にlibsedumi.soをコンパイルするbuild_extフック
   README.md                    # (やや古い。フェーズ概要はこのCONTRIBUTING.mdの方が新しい)
 ```
 
@@ -386,9 +387,50 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
    matches_octave`の厳密な`iter`一致要求は小さな合成フィクスチャでの
    話であり、実問題規模ではこの種の1反復程度のズレは想定内)、
    `cx`/`by`は両者とも期待値に一致しているため実害はない。
-4. **Phase 6: パッケージング。** `cibuildwheel` 等でのwheel化、
-   `libsedumi.so` の同梱方法の検討(現状はビルド済みバイナリを
-   そのままリポジトリに置いている)。
+4. **Phase 6: パッケージング。** ~~`libsedumi.so`の同梱方法の検討
+   (現状はビルド済みバイナリをそのままリポジトリに置いている)~~ ――
+   この記述自体が古かった: 実際には`libsedumi.so`/`.dylib`は
+   `.gitignore`対象で**リポジトリにはコミットされておらず**、
+   `_native.py`の`_ensure_built()`が初回import時に
+   `tools/build_libsedumi.sh`を自動的に呼んでその場でビルドする
+   (開発時の`pip install -e .[test]`はこれに依存している)、という
+   のが実態だった。この方式はeditable installでは動くが、
+   本物のwheelとしてインストールされた場合には壊れる
+   (`csrc/`/`tools/`は`sedumipy`パッケージの一部として同梱されて
+   いないため、importのたびにコンパイルし直すこともできないし、
+   そもそもエンドユーザーの環境にgcc/BLASの開発ヘッダーが入っている
+   保証もない)。
+
+   **今回やったこと:** `setup.py`に`build_ext`をオーバーライドする
+   カスタムステップ(`BuildLibsedumi`)を追加し、`pip install`/
+   `python -m build --wheel`時に`tools/build_libsedumi.sh`と同じ
+   コンパイルコマンドを1回だけ実行して`libsedumi.so`をビルド、
+   `build_lib/sedumipy/`配下に直接配置することでwheelに同梱される
+   ようにした(`_native.py`の`_ensure_built()`はそのままなので、
+   wheelから入れた場合は既にファイルがあるため何もせず、editable
+   installの場合は従来通り初回import時にビルドする、という二重の
+   動作を両立させている)。ソースを持たない`Extension`を1つ
+   登録しているのは、setuptoolsに「このwheelはプラットフォーム
+   依存(`py3-none-any`ではない)」と正しく認識させるためだけの
+   トリック。
+
+   **この環境で実際に確認したこと:** `python -m build --wheel`で
+   `cp311-cp311-linux_x86_64`タグ付きのwheelがビルドされ
+   `libsedumi.so`が同梱されていること、そのwheelを(このリポジトリの
+   `csrc`/`tools`に一切アクセスできない)独立した仮想環境に
+   `pip install`し、`import sedumipy; sedumipy.sedumi(...)`が
+   正しく動作することを確認した(このLinux環境限定)。
+
+   **まだ検証できていないこと(この環境にDockerデーモンが無く
+   実行できなかった):** `cibuildwheel`自体の実行(`pyproject.toml`
+   に`[tool.cibuildwheel]`の設定は追加したが、manylinuxコンテナ上での
+   実際のビルドは未検証)、macOS/Windowsでのビルド(`tools/
+   build_libsedumi.sh`はgcc前提でWindowsのcl.exeには未対応)、
+   `libblas`への動的リンクによる配布可搬性の問題(`ldd`で確認した
+   限り`libblas.so.3`/`libopenblas.so.0`に動的リンクされており、
+   本当にPyPI配布可能なmanylinux wheelにするには`auditwheel repair`
+   でこれらを同梱するか静的リンクに切り替える必要がある。今回は
+   その作業までは行っていない)。
 
 ## 8. テストの実行方法
 

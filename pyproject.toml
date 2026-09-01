@@ -19,3 +19,18 @@ test = ["pytest>=7.0"]
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["sedumipy*"]
+
+# Phase 6: not yet run in real CI in this environment (no Docker daemon
+# available to invoke cibuildwheel's manylinux containers here) -- this
+# is a starting configuration, validated only indirectly via `python -m
+# build --wheel` on this same Linux host (see CONTRIBUTING.md's Phase 6
+# note for what that did and didn't confirm). Only Linux is listed;
+# macOS/Windows builds need setup.py's BuildLibsedumi step ported off
+# tools/build_libsedumi.sh's gcc-only, Linux/macOS-`.so`/`.dylib`-only
+# assumptions first (Windows especially -- there is no build_libsedumi.sh
+# equivalent for cl.exe yet).
+[tool.cibuildwheel]
+build = "cp310-* cp311-* cp312-* cp313-*"
+skip = "*-musllinux_* *_i686 *-win32"
+before-all = "yum install -y blas-devel lapack-devel || apt-get install -y libblas-dev liblapack-dev"
+test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0\""

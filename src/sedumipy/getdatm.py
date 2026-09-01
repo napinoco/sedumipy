@@ -63,7 +63,7 @@ def getDAtm(A, Ablkjc, dense: dict, DAtdenq, d: dict, K: dict) -> dict:
         )
         DAt_q = DAt_q + W @ A_vec
 
-    DAt_q = np.asarray(DAt_q.todense())
+    DAt_q = DAt_q.tocsr()
 
     dense_q = np.asarray(dense.get("q", np.zeros(0, dtype=np.int64))).ravel().astype(np.int64)
     if dense_q.size:
@@ -73,6 +73,8 @@ def getDAtm(A, Ablkjc, dense: dict, DAtdenq, d: dict, K: dict) -> dict:
     denq = _native.adendotd(dense, d, adotd_in, DAtdenq, qblkstart)
 
     if dense_q.size:
-        DAt_q[dense_q - 1, :] = 0.0
+        keep = np.ones(lorN)
+        keep[dense_q - 1] = 0.0
+        DAt_q = sp.diags(keep) @ DAt_q
 
     return {"q": DAt_q, "denq": denq}

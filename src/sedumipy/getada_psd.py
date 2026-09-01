@@ -15,6 +15,36 @@ from .getsymbada import getsymbada
 from .incorder import incorder
 
 
+def build_q_pattern(A, Ablkjc, K: dict, dense: dict | None = None):
+    """q_pattern = build_q_pattern(A, Ablkjc, K, dense=None): the pre-loop
+    Lorentz ddotA structural (0/1) sparsity pattern, `None` when K has no
+    Lorentz blocks -- the one piece of `build_aord()`'s setup that
+    `getsymbada()` actually needs. Factored out so callers that don't
+    need `Aord`'s other fields (its `lqperm`/`sperm`/`dz`, from
+    `sortnnz()`/`incorder()`) can skip them: `incorder()` in particular
+    is a Python-level loop over every one of A's m columns regardless of
+    how small the PSD range is, so at nql180/qssp180 scale (m ~ 1.3e5,
+    no PSD blocks at all) it dominates build_aord()'s runtime for no
+    benefit -- sedumi.py's own has_psd=False branch only needs this
+    structural pattern (to build its one-time symbolic ADA via
+    getsymbada(), see that branch's own comment), not the rest of Aord.
+    """
+    lorN = len(K.get("q", []))
+    if not lorN:
+        return None
+    mainblks = np.asarray(K["mainblks"], dtype=np.int64).ravel()
+    qblkstart = np.asarray(K["qblkstart"], dtype=np.int64).ravel()
+    q_pattern = _native.findblks(A, Ablkjc, 2, 3, qblkstart)
+    dense_q = np.asarray(dense["q"]).ravel().astype(np.int64) if dense else np.zeros(0, dtype=np.int64)
+    if dense_q.size:
+        q_pattern = q_pattern.tolil()
+        q_pattern[dense_q - 1, :] = 0.0
+        q_pattern = q_pattern.tocsc()
+    Alp = _native.extractA(A, Ablkjc, 1, 2, (int(mainblks[0]), int(mainblks[1])))
+    Alp.data[:] = 1.0
+    return (q_pattern + Alp).tocsc()
+
+
 def build_aord(A, K: dict, dense: dict | None = None):
     """Ablkjc, Aord, symbada = build_aord(A, K, dense=None): the one-time
     setup real sedumi.m does before its main loop starts (before
@@ -41,23 +71,13 @@ def build_aord(A, K: dict, dense: dict | None = None):
     Aord: dict = {"lqperm": _native.sortnnz(A, None, Ablkjc[:, 2])}
 
     lorN = len(K.get("q", []))
-    q_pattern = None
+    q_pattern = build_q_pattern(A, Ablkjc, K, dense)
     if lorN:
-        qblkstart = np.asarray(K["qblkstart"], dtype=np.int64).ravel()
-        q_pattern = _native.findblks(A, Ablkjc, 2, 3, qblkstart)
-        dense_q = np.asarray(dense["q"]).ravel().astype(np.int64) if dense else np.zeros(0, dtype=np.int64)
-        if dense_q.size:
-            q_pattern = q_pattern.tolil()
-            q_pattern[dense_q - 1, :] = 0.0
-            q_pattern = q_pattern.tocsc()
         # NB: upstream's `if ~isempty(DAt.q)` tests MATLAB isempty() (zero
         # rows/cols), which is already guaranteed false here since lorN>0
         # gives q_pattern lorN rows -- it is NOT a `nnz>0` check, so the
         # Alp-augmented sortnnz below must run unconditionally, even when
         # dense.q's zeroing above has driven q_pattern's own nnz to 0.
-        Alp = _native.extractA(A, Ablkjc, 1, 2, (int(mainblks[0]), int(mainblks[1])))
-        Alp.data[:] = 1.0
-        q_pattern = (q_pattern + Alp).tocsc()
         Aord["qperm"] = _native.sortnnz(q_pattern, None, None)
     else:
         Aord["qperm"] = np.arange(1, m + 1, dtype=np.int64)

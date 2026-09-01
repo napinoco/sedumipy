@@ -40,9 +40,10 @@ from .checkpars import checkpars
 from .cone import asmDxq, frameit, maxeigK, psdscale
 from .deninfac import deninfac
 from .getada import getada
-from .getada_psd import build_aord, getada_psd
+from .getada_psd import build_aord, build_q_pattern, getada_psd
 from .getdatm import getDAtm
 from .getdense import getdense
+from .getsymbada import getsymbada
 from .optstep import optstep
 from .posttransfo import posttransfo
 from .pretransfo import pretransfo
@@ -95,41 +96,49 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
         symLden = symbcholden(Lsym, dense, {"denq": DAtdenq})
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
     else:
+        # ---- one-time symbolic Cholesky pattern for ADA ----
+        # Real sedumi.m builds this via getsymbada.m *before* sdinit.m
+        # ever runs, unconditionally for both the K.s==0 and K.s!=0
+        # cases (this module's SCOPE docstring already notes the
+        # has_psd branch above replicates that unconditional setup via
+        # build_aord()/getsymbada() -- a purely structural, 0/1
+        # computation from A's own sparsity pattern). This branch used
+        # to instead build the pattern numerically, from getada() on a
+        # placeholder d with d["q2"] forced to all-ones (needed because
+        # sdinit.py always starts the real d["q2"] at exactly 0 --
+        # sdinit.m's own d.q2 = zeros(...) -- which would otherwise miss
+        # the rank-1 cross-constraint coupling a Lorentz block's d["q2"]
+        # term contributes once later iterations make it nonzero).
+        # That placeholder fix was confirmed against the real Octave
+        # build on vendor/sedumi-upstream/examples/nb.mat (394 Lorentz
+        # blocks), but a numeric matrix product can ALSO under-cover the
+        # true pattern through ordinary floating-point cancellation --
+        # confirmed on DIMACS's nb_L2.mat (839 Lorentz blocks feeding
+        # just 123 constraints, so many blocks routinely land in the
+        # same ADA[i,j] cell): the placeholder's particular q1/l/det
+        # values happened to cancel some of those sums to exactly 0 at
+        # iteration 1, silently dropping positions later iterations
+        # really need and degrading PCG's preconditioner until it
+        # stopped converging within the iteration cap (numerr=2), while
+        # the real Octave/MEX build solves the same file cleanly
+        # (numerr=0). getsymbada()'s spones-based approach unions
+        # structural patterns, never numeric values, so it can't suffer
+        # that kind of cancellation by construction.
+        #
+        # Built via build_q_pattern()+getsymbada() directly rather than
+        # the has_psd branch's build_aord(): this branch only needs the
+        # resulting structural ADA pattern, not Aord's other fields
+        # (lqperm/sperm/dz), and build_aord() computes those unconditionally
+        # via incorder() -- a Python-level loop over every one of A's m
+        # columns regardless of how small the PSD range is, which
+        # dominates runtime for no benefit at nql180/qssp180 scale
+        # (m ~ 1.3e5, no PSD blocks at all).
         Aord = None
+        q_pattern = build_q_pattern(A2, Ablkjc, K2, dense)
+        ADA_symbolic = getsymbada(A2, Ablkjc, q_pattern, K2["sblkstart"])
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
         DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2)
         DAtdenq = DAt["denq"]
-
-        # ---- one-time symbolic Cholesky pattern for ADA ----
-        # sdinit.py always starts d["q2"] at exactly 0 (each Lorentz
-        # block's "arrow" part is zero at the very first scaling point --
-        # sdinit.m's own d.q2 = zeros(...)), so building ADA's symbolic
-        # pattern from THIS iteration's real d/DAt (like the line below
-        # used to do, directly) misses the rank-1 cross-constraint
-        # coupling a Lorentz block's d["q2"] term contributes once later
-        # iterations make it nonzero -- real sedumi.m sidesteps this
-        # entirely by building ADA's symbolic pattern via getsymbada.m
-        # *before* sdinit.m ever runs (this module's own SCOPE docstring
-        # already flagged that the has_psd branch replicates that
-        # unconditional real-sedumi.m setup while this simpler branch
-        # doesn't). Confirmed as a real, not just theoretical, bug via
-        # direct comparison against the real Octave build on
-        # vendor/sedumi-upstream/examples/nb.mat (394 Lorentz blocks):
-        # the one-time symbchol() ordering ends up missing positions
-        # that only become numerically nonzero from iteration ~4 onward,
-        # so numeric_cholesky's (fixed) sparsity pattern silently can't
-        # represent them, degrading the PCG preconditioner until PCG
-        # stops converging within the iteration cap.
-        # A structurally-nonzero placeholder d["q2"] here (used only to
-        # size this one-time pattern, then discarded -- the real
-        # per-iteration d/DAt/ADA below and inside the main loop are
-        # unaffected) ensures symbchol()'s ordering includes every
-        # position that can ever become numerically nonzero, not just
-        # iteration 1's.
-        d_symbolic = dict(d)
-        d_symbolic["q2"] = np.ones_like(np.asarray(d["q2"]))
-        DAt_symbolic = getDAtm(A2, Ablkjc, dense, DAtdenq, d_symbolic, K2)
-        ADA_symbolic, _ = getada(A2, K2, d_symbolic, DAt_symbolic)
 
         ADA, _absd0 = getada(A2, K2, d, DAt)
         Lsym = symbchol(ADA_symbolic)

@@ -54,8 +54,16 @@ from .updtransfo import updtransfo
 from .wregion import wregion
 
 
-def sedumi(A, b, c, K: dict, pars: dict | None = None):
-    """x, y, info = sedumi(A, b, c, K, pars=None)"""
+def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
+    """x, y, info = sedumi(A, b, c, K, pars=None, **pars_kwargs)
+
+    `pars_kwargs` lets individual options be overridden as keyword
+    arguments (e.g. `sedumi(A, b, c, K, eps=1e-9)`) instead of building a
+    `pars` dict by hand; entries in `pars_kwargs` win over the same key
+    in `pars` when both are given. See checkpars.py for the full list of
+    recognized `pars` fields and their defaults."""
+    if pars_kwargs:
+        pars = {**(pars or {}), **pars_kwargs}
     A2, b2, c2, K2, prep, _origcoeff = pretransfo(A, b, c, K, pars or {})
     b2 = np.asarray(b2, dtype=np.float64).ravel()
     c2 = np.asarray(c2, dtype=np.float64).ravel()

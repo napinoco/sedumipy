@@ -42,7 +42,7 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 | Phase 3-b | コーン数学ユーティリティ(eigK, psdeig, psdscale等)移植 | **完了** |
 | Phase 3-c | 内点法の反復制御ロジック(sdinit〜optstep)移植 | **完了** |
 | Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
-| Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **未着手** |
+| Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **一部完了(.mat I/O・トップレベルAPIは完了、SDPAは未着手)** |
 | Phase 5 | 検証・ベンチマーク | **完了** |
 | Phase 6 | パッケージング・リリース | **未着手** |
 
@@ -109,6 +109,7 @@ sedumipy/                    # リポジトリルート
       optstep.py                 # LP最適性の早期判定(optstep.m)
       amul.py / checkpars.py     # 補助ユーティリティ
       sedumi.py                  # トップレベルドライバ(全部をつなぐ)
+      matio.py                   # Phase 4: .mat問題/解ファイルの読み書き
   tests/
     test_*.py                  # 各モジュールの検証テスト(オラクル比較)
     fixtures/                  # Octave実機で生成した .mat オラクルデータ(コミット済み)
@@ -330,9 +331,24 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
    バインドされただけで独立したMEXターゲットを持たない)。
    結論として追加実装は不要と判断し、`_native.py` モジュール
    docstringにこの棚卸し結果自体を明記した(未使用の理由を含む)。
-2. **Phase 4: 高レベルAPI・入出力互換層。** `.mat`/SDPA形式の読み書き、
-   `sedumi()` のPython的に自然なシグネチャ・引数バリエーション対応
-   (現状 `sedumi(A,b,c,K,pars=None)` の単純な形のみ)。
+2. **Phase 4: 高レベルAPI・入出力互換層。** 以下は完了:
+   - トップレベルAPI: `import sedumipy; sedumipy.sedumi(A,b,c,K)` が
+     使えるようになった(従来は `sedumipy.sedumi.sedumi(...)` の
+     サブモジュール経由のみ)。`__init__.py`で`from .sedumi import sedumi`
+     しているが、`sedumipy.sedumi`サブモジュールを先に(または後に)
+     importしても関数を指すことに変わりはない(Pythonの
+     `sys.modules`キャッシュにより、親パッケージへの属性上書きは
+     サブモジュールの初回import時にしか起きないため)ことを確認済み。
+     また`sedumi()`は`pars`辞書に加えて`**kwargs`でも個別オプションを
+     渡せるようにした(例: `sedumi(A,b,c,K,eps=1e-9)`)。
+   - `.mat` I/O: `matio.py`(`read_mat`/`write_solution_mat`)。
+     SeDuMiの問題ファイルは(移植元に対応する`.m`が存在しない)ただの
+     MATLAB構造体なので、他のモジュールと違い「移植」ではなく
+     このport独自の新規実装。`A`/`At`どちらの向きの格納も、
+     `b`/`c`がスパースで保存されているケースも扱う
+     (`vendor/sedumi-upstream/examples/*.mat`で確認済み)。
+   残っているのは **SDPA sparse形式(`.dat-s`)の読み書き**のみ
+   (対応する`.m`実装は本家にもなく、これも新規実装になる)。
 3. ~~**Phase 5: 検証・ベンチマーク。**~~ **完了。**
    `tests/test_golden_end_to_end.py` が Phase 0 の golden reference
    対象問題(`vendor/sedumi-upstream/examples/`)を実際に

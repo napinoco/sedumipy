@@ -1,3 +1,9 @@
 [submodule "vendor/sedumi-upstream"]
 	path = vendor/sedumi-upstream
 	url = https://github.com/sqlp/sedumi.git
+[submodule "examples/sdplib"]
+	path = examples/sdplib
+	url = https://github.com/vsdp/SDPLIB.git
+[submodule "examples/dimacs"]
+	path = examples/dimacs
+	url = https://github.com/vsdp/DIMACS.git

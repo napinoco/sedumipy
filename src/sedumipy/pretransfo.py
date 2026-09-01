@@ -129,9 +129,13 @@ def pretransfo(At, b, c, K: dict, pars: dict):
     else:
         raise ValueError("(At,K) size mismatch")
 
+    if sp.issparse(b):
+        b = b.toarray()
     b = np.asarray(b, dtype=np.complex128).ravel()
     if b.size != At.shape[1]:
         raise ValueError("(At,b) size mismatch")
+    if sp.issparse(c):
+        c = c.toarray()
     c = np.asarray(c, dtype=np.complex128).ravel()
     if c.size != N:
         raise ValueError("(c,K) size mismatch")

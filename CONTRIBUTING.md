@@ -38,13 +38,13 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 | Phase 0 | 検証基盤(Octave実機でgolden reference取得) | **完了** |
 | Phase 1 | Cカーネルのmex依存除去→独立Cライブラリ化 | **完了** |
 | Phase 2 | Pythonバインディング(ctypes)構築 (クラスタ1〜5) | **完了** |
-| Phase 3-a | 薄いMEXラッパー`.m`をPython APIとして整備 | **未着手** |
+| Phase 3-a | 薄いMEXラッパー`.m`をPython APIとして整備 | **完了** |
 | Phase 3-b | コーン数学ユーティリティ(eigK, psdeig, psdscale等)移植 | **完了** |
 | Phase 3-c | 内点法の反復制御ロジック(sdinit〜optstep)移植 | **完了** |
 | Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
-| Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **未着手** |
-| Phase 5 | 検証・ベンチマーク | **未着手** |
-| Phase 6 | パッケージング・リリース | **未着手** |
+| Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **完了** |
+| Phase 5 | 検証・ベンチマーク | **完了** |
+| Phase 6 | パッケージング・リリース | **一部完了(wheelビルド自体は動作確認済み、manylinux/CI上での検証は未着手)** |
 
 Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PSD(半正定値
 錐)問題について完了**しており、実際に `sedumipy.sedumi.sedumi(A,b,c,K)` を
@@ -61,6 +61,25 @@ Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PS
 `pars.denf=3` で `getdense.m` の検出閾値を意図的に下げたケース)でも
 Octave版と `iter`/`numerr`/`pinf`/`dinf`/`x` が一致することを確認済み
 (`y` は §6 の「双対解の非一意性」を参照)。
+
+**Phase 5(実問題での検証)も完了**(`tests/test_golden_end_to_end.py`):
+Phase 0 の golden reference が対象にしていた実問題(SDPLIB由来、
+`vendor/sedumi-upstream/examples/`、`nb`/`arch0`/`control07`/`trto3`/
+`OH_2Pi_STO-6GN9r12g1T2`。`quantum` は `K.scomplex`/`K.ycomplex` を使う
+複素Hermitian PSD問題でスコープ外のため除外)で `sedumipy.sedumi()` を
+実行し、Octave実機の golden reference と目的関数値が一致することを
+確認した。この検証の過程で以下の2件の実バグを発見・修正した(詳細は
+§6):
+- `K.s==0`(LP+SOCPのみ)パスのADA記号的コレスキー順序が、Lorentz錐
+  のarrow項(`d.q2`)に依存するsparsity patternの一部を見落としており、
+  `d.q2`が育つにつれてCholesky分解が不正確になりPCGが発散するバグ
+  (`nb.mat`、396個のSOCPブロックで顕在化)。
+- `cpspdiag`(`getada3`のK.s==0分岐が呼ぶ診断用の対角成分抽出)が
+  `ibsearch`マクロ経由で`bsearch()`を使っており、そのコンパレータが
+  `sortnnz.c`/`iswnbr.c`と同種のqsort/bsearchコンパレータ未定義動作を
+  踏んでいた(§6参照)。ただし実際のsedumi.py呼び出し経路では
+  `K.s==0`のとき`getada3`自体が呼ばれないため、実害はテスト
+  (`test_getada_no_psd_blocks`)止まりだった。
 
 ## 3. ディレクトリ構成
 
@@ -90,6 +109,8 @@ sedumipy/                    # リポジトリルート
       optstep.py                 # LP最適性の早期判定(optstep.m)
       amul.py / checkpars.py     # 補助ユーティリティ
       sedumi.py                  # トップレベルドライバ(全部をつなぐ)
+      matio.py                   # Phase 4: .mat問題/解ファイルの読み書き
+      sdpa.py                    # Phase 4: SDPA sparse(.dat-s)形式の読み書き
   tests/
     test_*.py                  # 各モジュールの検証テスト(オラクル比較)
     fixtures/                  # Octave実機で生成した .mat オラクルデータ(コミット済み)
@@ -98,6 +119,7 @@ sedumipy/                    # リポジトリルート
     generate_*_oracle.m        # 各テストのオラクルを vendor/sedumi-upstream の Octave/MEXビルドで生成するスクリプト
     build_libsedumi.sh         # csrc/ から libsedumi.so をビルドするスクリプト
   pyproject.toml
+  setup.py                      # Phase 6: wheelビルド時にlibsedumi.soをコンパイルするbuild_extフック
   README.md                    # (やや古い。フェーズ概要はこのCONTRIBUTING.mdの方が新しい)
 ```
 
@@ -238,23 +260,177 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
   比較する形にしている。**同じ理由で `At` がフルランクとは限らない
   ランダム生成テストフィクスチャを新規に作る際は、`y` を厳密比較する
   前に `rank(At)==m` かどうかを確認すること。**
+- **`K.s==0` パスの一回限りのADA記号的コレスキー順序が、Lorentz錐の
+  arrow項に依存するsparsity patternの一部を見落としていた。**
+  `sedinit.py` はスケーリング点 `d["q2"]`(各Lorentz錐のarrow部分の
+  スカラー)を必ず厳密に0から開始する(`sdinit.m`の`d.q2 = zeros(...)`
+  通り)。`sedumi.py`の`K.s==0`分岐は、この最初の`d`(=`d.q2=0`)で
+  一度だけ`ADA = getada(A,K,d,DAt)`を計算し、その**数値的な**
+  sparsity patternをそのまま`symbchol(ADA)`に渡して以後全反復で使い
+  回していた。ところが`getada.py`のLorentz項
+  (`DAt_q.T @ DAt_q`、`DAt.q[k,j] = d.q1[k]*Aj[k] + d.q2[k]*(...)`)
+  は、`d.q2=0`のとき同じLorentz錐ブロックを共有するだけで行方向には
+  重ならない制約ペア `(i,j)` に対する寄与が構造的にまるごと消えて
+  しまう ―― つまり反復1時点のADAは、後の反復で`d.q2`が育つにつれて
+  実際には非ゼロになる位置を欠いた、過小なsparsity patternになって
+  いた。`numeric_cholesky`はこの(固定された)symbolic patternの外側
+  には書き込めないため、`d.q2`が育つ反復(実際には3〜5反復目以降)
+  からCholesky分解が徐々に不正確になり、PCGの前処理性能が崩れて
+  反復回数上限に張り付き、最終的に誤った解に収束する。
+  `vendor/sedumi-upstream/examples/nb.mat`(LP+396個のSOCPブロック)
+  で実際に確認: 本家Octave版は20反復・`numerr=0`で収束するのに対し、
+  修正前のPython版は9反復で`numerr=2`(深刻な数値エラー)を報告して
+  完全に異なる値を返していた。本家`sedumi.m`はこの問題を、
+  `getsymbada.m`ベースの構造的(値に依存しない)pattern構築を
+  `sum(K.s)`の値に関わらず常に`sdinit`より前に実行することで回避して
+  いる(本ファイルの過去のこの箇所の記述、および`sedumi.py`自身の
+  SCOPEドキュストリングが「実装を簡略化した既知の相違点」として
+  触れていた箇所)。**修正**: `sedumi.py`の`K.s==0`分岐で、
+  `symbchol()`に渡す一度限りのADAだけは`d["q2"]`を(捨てるための
+  ローカルコピーで)強制的に非ゼロにしたものから構築するようにし、
+  以後の各反復で実際に使う`d`/`DAt`/`ADA`には一切手を加えないように
+  した。`tests/test_golden_end_to_end.py`(Phase 5, §7参照)で
+  `nb`/`arch0`/`control07`/`trto3`/`OH_2Pi_STO-6GN9r12g1T2`の5問題
+  全てがOctave実機の結果と一致することを確認済み。
+- **`getada3`の`K.s==0`分岐が呼ぶ`cpspdiag`も、`sortnnz.c`/`iswnbr.c`
+  と同じqsort/bsearchコンパレータ未定義動作を踏んでいた。**
+  `cpspdiag`は`blksdp.h`の`ibsearch`マクロ(=標準ライブラリの
+  `bsearch()`)経由でADAの対角成分を探す。`ibsearch`はこの探索に
+  `char`を返す`icmp()`を`COMPFUN`(`int(*)(const void*,const void*)`)
+  にキャストして渡しており、これも未定義動作 ―― 実際にこのport の
+  ビルドでは`bsearch()`が対角成分を一度も見つけられず、`absd`が
+  (対角成分が正しくソートされた形で存在しているにもかかわらず)
+  常に全て0.0になっていた(`tests/test_getada.py::test_getada_no_psd_blocks`
+  で発覚)。ただし`sedumi.py`の実際の呼び出し経路では、`getada3`
+  自体が`has_psd=True`(=`K.s`が非空、したがって内部的に`sdpN>0`)の
+  ときしか呼ばれないため、この`sdpN==0`分岐は実運用では到達しない
+  デッドコードであり実害はなかった。`sortnnz`/`iswnbr`のときと同じ
+  方針で解決 ―― `cpspdiag`はctypesバインディングをやめ、
+  `scipy.sparse`の`.diagonal()`で直接対角成分を取る(`cpspdiag.c`
+  自身のドキュメントコメント通りの意図)Python実装に置き換えた。
 
 ## 7. 残っている作業(優先度が高いと思われる順)
 
-1. **Phase 3-a: 薄いMEXラッパー`.m`の公開API整備。** `_native.py` に
-   ctypesバインディングとしてはあるが、`sedumipy` パッケージの
-   公開APIとして整理されていない関数がないか棚卸しする(PSD対応
-   完了により、`getada1`/`getada2`/`getada3`/`incorder`/`getsymbada`
-   はすでに `getada_psd.py` 経由でパッケージ内から使われているが、
-   それ自体を公開APIとして整理する作業はまだ残っている)。
-2. **Phase 4: 高レベルAPI・入出力互換層。** `.mat`/SDPA形式の読み書き、
-   `sedumi()` のPython的に自然なシグネチャ・引数バリエーション対応
-   (現状 `sedumi(A,b,c,K,pars=None)` の単純な形のみ)。
-3. **Phase 5: 検証・ベンチマーク。** Phase 0 の golden reference
-   (`tests/golden/`)に対する網羅的な回帰テスト、性能比較。
-4. **Phase 6: パッケージング。** `cibuildwheel` 等でのwheel化、
-   `libsedumi.so` の同梱方法の検討(現状はビルド済みバイナリを
-   そのままリポジトリに置いている)。
+1. ~~**Phase 3-a: 薄いMEXラッパー`.m`の公開API整備。**~~ **完了。**
+   `install_sedumi.m` のMEXビルド対象一覧と `_native.py` の全バインディング
+   を突き合わせて棚卸しした結果:実際に使われている実MEXカーネルは
+   全て `_native.py` に集約済みで、それぞれ然るべき上位モジュール
+   (`getdense.py`/`getdatm.py`/`pcg.py`/`cone.py`/`updtransfo.py`/
+   `wregion.py`/`sdinit.py`/`getada_psd.py`/`symbchol.py`/
+   `symbcholden.py` 等)から `_native.xxx()` の形で呼ばれており、
+   「バインディングはあるが未整理」という抜けは見つからなかった
+   (`incorder`/`iswnbr` の2つだけは qsortの未定義動作を避けるため
+   意図的にctypes化せず `incorder.py`/`neighborhood.py` にPython実装
+   として存在する、既知の意図的な設計)。
+   逆に `_native.py` 内で他から一切呼ばれていないバインディングが
+   7個(`realdot`/`realssqr`/`scalarmul`/`addscalarmul`/`blkmul`/
+   `mJdetd`/`cholsplit`)見つかったが、いずれも「本家SeDuMi自身に
+   おいても未使用」と確認済み(`blkmul.c`/`mJdetd.c`は
+   `install_sedumi.m`のMEXビルド対象リストにそもそも入っていない
+   =本家の時点でデッドコード、`cholsplit()`の出力`L.split`は
+   `blkchol.c`のmex引数リストに現れず本家でも読まれていない、
+   `realdot`等はBLAS的な補助関数でPhase 1のスモークテスト用に
+   バインドされただけで独立したMEXターゲットを持たない)。
+   結論として追加実装は不要と判断し、`_native.py` モジュール
+   docstringにこの棚卸し結果自体を明記した(未使用の理由を含む)。
+2. ~~**Phase 4: 高レベルAPI・入出力互換層。**~~ **完了。**
+   - トップレベルAPI: `import sedumipy; sedumipy.sedumi(A,b,c,K)` が
+     使えるようになった(従来は `sedumipy.sedumi.sedumi(...)` の
+     サブモジュール経由のみ)。`__init__.py`で`from .sedumi import sedumi`
+     しているが、`sedumipy.sedumi`サブモジュールを先に(または後に)
+     importしても関数を指すことに変わりはない(Pythonの
+     `sys.modules`キャッシュにより、親パッケージへの属性上書きは
+     サブモジュールの初回import時にしか起きないため)ことを確認済み。
+     また`sedumi()`は`pars`辞書に加えて`**kwargs`でも個別オプションを
+     渡せるようにした(例: `sedumi(A,b,c,K,eps=1e-9)`)。
+   - `.mat` I/O: `matio.py`(`read_mat`/`write_solution_mat`)。
+     SeDuMiの問題ファイルは(移植元に対応する`.m`が存在しない)ただの
+     MATLAB構造体なので、他のモジュールと違い「移植」ではなく
+     このport独自の新規実装。`A`/`At`どちらの向きの格納も、
+     `b`/`c`がスパースで保存されているケースも扱う
+     (`vendor/sedumi-upstream/examples/*.mat`で確認済み)。
+   - SDPA sparse形式(`.dat-s`)の読み書き: `sdpa.py`(`read_sdpa`/
+     `write_sdpa`)。`read_sdpa`は`conversion/fromsdpa.m`の忠実な移植
+     (Octave実機オラクルと一致確認済み、
+     `tools/generate_sdpa_oracle.m`/`tests/fixtures/sdpa/`)。
+     `write_sdpa`は本家に対応物がない新規実装(本家の
+     `conversion/writesdp.m`はSDPA形式ではなく別形式のSDPpackを書き出す
+     もので無関係)だが、実際に`vendor/sedumi-upstream/examples/
+     arch0.mat`を`write_sdpa`で書き出し、それを実機Octaveの
+     `fromsdpa.m`で読み戻して元の`(At,b,c)`と完全一致することを
+     手動で確認済み(K.q/K.rはSDPA形式で表現できないため
+     `write_sdpa`は明示的に`ValueError`で拒否する)。
+3. ~~**Phase 5: 検証・ベンチマーク。**~~ **完了。**
+   `tests/test_golden_end_to_end.py` が Phase 0 の golden reference
+   対象問題(`vendor/sedumi-upstream/examples/`)を実際に
+   `sedumipy.sedumi()` に通し、Octave実機の結果と一致することを検証
+   する(§2「Phase 5」、§6の2件のバグ修正を参照)。性能ベンチマークは
+   `tools/benchmark_examples.py`(実行方法はスクリプト自身のdocstring
+   参照)。この環境(Octaveをローカルでビルドして計測、CPU/コア数等は
+   環境依存につき絶対値は目安)での実測値:
+
+   | problem | m | N (=length(c)) | Python (秒) | Octave/MEX (秒) | iter |
+   |---|---:|---:|---:|---:|---:|
+   | nb | 123 | 2383 | 3.0 | 0.9 | 20 |
+   | arch0 | 174 | 56197 | 2.5 | 2.4 | 31〜32 |
+   | control07 | 666 | 6125 | 9.3 | 9.2 | 40 |
+   | trto3 | 544 | 398977 | 18.2 | 19.8 | 60 |
+   | OH_2Pi_STO-6GN9r12g1T2 | 948 | 240720 | 34.4 | 34.8 | 20 |
+
+   最小の問題(`nb`)ではPython側のオーバーヘッド(関数呼び出し・
+   numpy配列確保・ctypes境界越えのコスト)が支配的でOctave/MEX版の
+   約3倍かかるが、問題が大きくなるにつれてCネイティブカーネルでの
+   実計算timeが支配的になり、中〜大規模問題(`arch0`以上)では
+   Octave/MEX版とほぼ同等〜やや高速という結果になった。`arch0`の
+   `iter`が31/32とOctave側と1回だけズレているのは、大規模問題での
+   浮動小数点丸め誤差の蓄積差によるもので(§6にある通り`test_sedumi_
+   matches_octave`の厳密な`iter`一致要求は小さな合成フィクスチャでの
+   話であり、実問題規模ではこの種の1反復程度のズレは想定内)、
+   `cx`/`by`は両者とも期待値に一致しているため実害はない。
+4. **Phase 6: パッケージング。** ~~`libsedumi.so`の同梱方法の検討
+   (現状はビルド済みバイナリをそのままリポジトリに置いている)~~ ――
+   この記述自体が古かった: 実際には`libsedumi.so`/`.dylib`は
+   `.gitignore`対象で**リポジトリにはコミットされておらず**、
+   `_native.py`の`_ensure_built()`が初回import時に
+   `tools/build_libsedumi.sh`を自動的に呼んでその場でビルドする
+   (開発時の`pip install -e .[test]`はこれに依存している)、という
+   のが実態だった。この方式はeditable installでは動くが、
+   本物のwheelとしてインストールされた場合には壊れる
+   (`csrc/`/`tools/`は`sedumipy`パッケージの一部として同梱されて
+   いないため、importのたびにコンパイルし直すこともできないし、
+   そもそもエンドユーザーの環境にgcc/BLASの開発ヘッダーが入っている
+   保証もない)。
+
+   **今回やったこと:** `setup.py`に`build_ext`をオーバーライドする
+   カスタムステップ(`BuildLibsedumi`)を追加し、`pip install`/
+   `python -m build --wheel`時に`tools/build_libsedumi.sh`と同じ
+   コンパイルコマンドを1回だけ実行して`libsedumi.so`をビルド、
+   `build_lib/sedumipy/`配下に直接配置することでwheelに同梱される
+   ようにした(`_native.py`の`_ensure_built()`はそのままなので、
+   wheelから入れた場合は既にファイルがあるため何もせず、editable
+   installの場合は従来通り初回import時にビルドする、という二重の
+   動作を両立させている)。ソースを持たない`Extension`を1つ
+   登録しているのは、setuptoolsに「このwheelはプラットフォーム
+   依存(`py3-none-any`ではない)」と正しく認識させるためだけの
+   トリック。
+
+   **この環境で実際に確認したこと:** `python -m build --wheel`で
+   `cp311-cp311-linux_x86_64`タグ付きのwheelがビルドされ
+   `libsedumi.so`が同梱されていること、そのwheelを(このリポジトリの
+   `csrc`/`tools`に一切アクセスできない)独立した仮想環境に
+   `pip install`し、`import sedumipy; sedumipy.sedumi(...)`が
+   正しく動作することを確認した(このLinux環境限定)。
+
+   **まだ検証できていないこと(この環境にDockerデーモンが無く
+   実行できなかった):** `cibuildwheel`自体の実行(`pyproject.toml`
+   に`[tool.cibuildwheel]`の設定は追加したが、manylinuxコンテナ上での
+   実際のビルドは未検証)、macOS/Windowsでのビルド(`tools/
+   build_libsedumi.sh`はgcc前提でWindowsのcl.exeには未対応)、
+   `libblas`への動的リンクによる配布可搬性の問題(`ldd`で確認した
+   限り`libblas.so.3`/`libopenblas.so.0`に動的リンクされており、
+   本当にPyPI配布可能なmanylinux wheelにするには`auditwheel repair`
+   でこれらを同梱するか静的リンクに切り替える必要がある。今回は
+   その作業までは行っていない)。
 
 ## 8. テストの実行方法
 

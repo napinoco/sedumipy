@@ -38,22 +38,27 @@ dropped:
     to check against). Left out of this file's parametrized tests
     anyway since (a) no reference objective exists to assert against and
     (b) qssp180 alone is far past the "timing" mark's "well under a
-    minute" bar. nql180old/qssp180old (inferior "old"-formulation
-    variants, same family as nql30old/qssp30old below) are a different,
-    still-unresolved story: nql180old was cross-checked against the real
-    Octave/MEX build (built from source in this environment) and BOTH
-    struggle badly on it (it's a genuinely ill-conditioned instance --
-    the real build's own console output shows `skip=5361` Cholesky
-    pivots skipped by iteration 54), but not identically: the real build
-    still limps to numerr=1 (iter=54, degraded but not a total failure),
-    while this port gives up earlier and worse (numerr=2, iter=27,
-    feasratio=0.90, r0=0.53) -- unlike nql30old/qssp30old, this is NOT
-    simply "the real build fails too, nothing to fix here"; there's a
-    real, if narrow, robustness gap on this specific hard instance.
-    qssp180old (largest file in this family, ~36 MB) didn't finish in
-    either this port or a real-build run within this investigation's
-    time budget (550s each), so it's unverified rather than confirmed
-    either way -- left excluded, not claimed as "same as nql180old".
+    minute" bar. nql180old (inferior "old"-formulation variant, same
+    family as nql30old/qssp30old below) is a different, still-unresolved
+    story: it was cross-checked against the real Octave/MEX build (built
+    from source in this environment) and BOTH struggle badly on it (it's
+    a genuinely ill-conditioned instance -- the real build's own console
+    output shows `skip=5361` Cholesky pivots skipped by iteration 54),
+    but not identically: the real build still limps to numerr=1 (iter=54,
+    degraded but not a total failure), while this port gives up earlier
+    and worse (numerr=2, iter=27, feasratio=0.90, r0=0.53) -- unlike
+    nql30old/qssp30old, this is NOT simply "the real build fails too,
+    nothing to fix here"; there's a real, if narrow, robustness gap on
+    this specific hard instance. qssp180old (largest file in this
+    family, ~36 MB) didn't finish in either this port or a real-build run
+    within that investigation's time budget (550s each) and was left
+    unverified -- resolved in a later session by giving both builds a
+    much larger budget instead: the real build now completes in ~1705s
+    (numerr=2, iter=30), and this port completes in ~3557s (numerr=2,
+    iter=30) -- the exact same failing iteration on both, unlike
+    nql180old's gap. So qssp180old belongs with nql30old/qssp30old, not
+    with nql180old: a genuine solver limitation shared by both builds,
+    not a porting bug.
   - sedumi() returns numerr=2 (a genuine, reproducible solver failure,
     not a reference-value problem) on: SDPLIB none; DIMACS nb_L2,
     nql30old, qssp30old. nql30 used to be in this list too, but is now

@@ -42,7 +42,7 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 | Phase 3-b | コーン数学ユーティリティ(eigK, psdeig, psdscale等)移植 | **完了** |
 | Phase 3-c | 内点法の反復制御ロジック(sdinit〜optstep)移植 | **完了** |
 | Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
-| Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **一部完了(.mat I/O・トップレベルAPIは完了、SDPAは未着手)** |
+| Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **完了** |
 | Phase 5 | 検証・ベンチマーク | **完了** |
 | Phase 6 | パッケージング・リリース | **未着手** |
 
@@ -110,6 +110,7 @@ sedumipy/                    # リポジトリルート
       amul.py / checkpars.py     # 補助ユーティリティ
       sedumi.py                  # トップレベルドライバ(全部をつなぐ)
       matio.py                   # Phase 4: .mat問題/解ファイルの読み書き
+      sdpa.py                    # Phase 4: SDPA sparse(.dat-s)形式の読み書き
   tests/
     test_*.py                  # 各モジュールの検証テスト(オラクル比較)
     fixtures/                  # Octave実機で生成した .mat オラクルデータ(コミット済み)
@@ -331,7 +332,7 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
    バインドされただけで独立したMEXターゲットを持たない)。
    結論として追加実装は不要と判断し、`_native.py` モジュール
    docstringにこの棚卸し結果自体を明記した(未使用の理由を含む)。
-2. **Phase 4: 高レベルAPI・入出力互換層。** 以下は完了:
+2. ~~**Phase 4: 高レベルAPI・入出力互換層。**~~ **完了。**
    - トップレベルAPI: `import sedumipy; sedumipy.sedumi(A,b,c,K)` が
      使えるようになった(従来は `sedumipy.sedumi.sedumi(...)` の
      サブモジュール経由のみ)。`__init__.py`で`from .sedumi import sedumi`
@@ -347,8 +348,17 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
      このport独自の新規実装。`A`/`At`どちらの向きの格納も、
      `b`/`c`がスパースで保存されているケースも扱う
      (`vendor/sedumi-upstream/examples/*.mat`で確認済み)。
-   残っているのは **SDPA sparse形式(`.dat-s`)の読み書き**のみ
-   (対応する`.m`実装は本家にもなく、これも新規実装になる)。
+   - SDPA sparse形式(`.dat-s`)の読み書き: `sdpa.py`(`read_sdpa`/
+     `write_sdpa`)。`read_sdpa`は`conversion/fromsdpa.m`の忠実な移植
+     (Octave実機オラクルと一致確認済み、
+     `tools/generate_sdpa_oracle.m`/`tests/fixtures/sdpa/`)。
+     `write_sdpa`は本家に対応物がない新規実装(本家の
+     `conversion/writesdp.m`はSDPA形式ではなく別形式のSDPpackを書き出す
+     もので無関係)だが、実際に`vendor/sedumi-upstream/examples/
+     arch0.mat`を`write_sdpa`で書き出し、それを実機Octaveの
+     `fromsdpa.m`で読み戻して元の`(At,b,c)`と完全一致することを
+     手動で確認済み(K.q/K.rはSDPA形式で表現できないため
+     `write_sdpa`は明示的に`ValueError`で拒否する)。
 3. ~~**Phase 5: 検証・ベンチマーク。**~~ **完了。**
    `tests/test_golden_end_to_end.py` が Phase 0 の golden reference
    対象問題(`vendor/sedumi-upstream/examples/`)を実際に

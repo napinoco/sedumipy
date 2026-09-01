@@ -12,4 +12,5 @@ PSD cones) and CONTRIBUTING.md for the full project status.
 
 from . import _native  # noqa: F401
 from .matio import read_mat, write_solution_mat  # noqa: F401
+from .sdpa import read_sdpa, write_sdpa  # noqa: F401
 from .sedumi import sedumi  # noqa: F401

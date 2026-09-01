@@ -62,15 +62,21 @@ check against real reference numbers, not a synthetic self-check. It also
 prints a timing/iteration-count summary and writes it to
 `benchmark_results.csv`.
 
+Coverage is essentially the full published set: all 92 SDPLIB problems
+and every DIMACS problem sedumi() can read directly, minus a documented
+handful this port can't yet solve in bounded time/memory or that hit a
+real solver limitation -- see the module's own docstring for the full
+exclusion list and why each one is excluded.
+
 ```sh
 git submodule update --init --recursive   # if not already done
-.venv/bin/python -m pytest tests/test_benchmarks.py -v          # everything (~4 min)
-.venv/bin/python -m pytest tests/test_benchmarks.py -v -m mini  # fastest subset only (~10s)
+.venv/bin/python -m pytest tests/test_benchmarks.py -v          # everything, ~101 problems (~10 min)
+.venv/bin/python -m pytest tests/test_benchmarks.py -v -m mini  # fastest subset only (~35s)
 ```
 
-Problems are grouped by `pytest.mark.mini` / `timing` / `extended`
-(fastest to slowest -- see the module's own docstring for exact
-per-tier runtimes and the sign conventions each collection needs).
+Problems are grouped by `pytest.mark.mini` (<2s each) / `timing` (2-20s)
+/ `extended` (20s-130s) by measured solve time -- see the module's own
+docstring for the sign conventions each collection/family needs.
 
 ## License
 

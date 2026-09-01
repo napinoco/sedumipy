@@ -1928,7 +1928,21 @@ def getada3(ada, At, Ajc1, Aord: dict, udsqr, K: dict):
         )
     else:
         iwork = np.zeros(max(m, 1), dtype=np.uintp)
-        _lib.cpspdiag(absd.ctypes.data_as(c_double_p), ada_struct, m)
+        # NOT wrapped via ctypes, deliberately: cpspdiag.c's diagonal
+        # lookup goes through blksdp.h's `ibsearch` macro, which casts
+        # icmp() -- declared to return `char` -- to a `COMPFUN`
+        # (`int(*)(const void*, const void*)`) for bsearch()'s
+        # comparator: undefined behavior in C, the same pattern already
+        # documented (and worked around the same way, by not binding the
+        # C kernel at all) for sortnnz.c/iswnbr.c's qsort comparators --
+        # see neighborhood.py's docstring. Confirmed to actually bite
+        # here too: on this port's build, bsearch() never finds the
+        # diagonal entry at all (every `absd` entry silently comes back
+        # 0.0, even though the diagonal is genuinely present and
+        # correctly sorted in the input). pattern.diagonal() is exactly
+        # cpspdiag's own documented intent (`d := diag(X)`), computed
+        # directly by scipy without going through the broken bsearch.
+        absd[:] = np.asarray(pattern.diagonal(), dtype=np.float64)
 
     _lib.spmakesym(ada_struct, m, iwork.ctypes.data_as(c_size_t_p))
 

@@ -91,8 +91,40 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None):
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
         DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2)
         DAtdenq = DAt["denq"]
+
+        # ---- one-time symbolic Cholesky pattern for ADA ----
+        # sdinit.py always starts d["q2"] at exactly 0 (each Lorentz
+        # block's "arrow" part is zero at the very first scaling point --
+        # sdinit.m's own d.q2 = zeros(...)), so building ADA's symbolic
+        # pattern from THIS iteration's real d/DAt (like the line below
+        # used to do, directly) misses the rank-1 cross-constraint
+        # coupling a Lorentz block's d["q2"] term contributes once later
+        # iterations make it nonzero -- real sedumi.m sidesteps this
+        # entirely by building ADA's symbolic pattern via getsymbada.m
+        # *before* sdinit.m ever runs (this module's own SCOPE docstring
+        # already flagged that the has_psd branch replicates that
+        # unconditional real-sedumi.m setup while this simpler branch
+        # doesn't). Confirmed as a real, not just theoretical, bug via
+        # direct comparison against the real Octave build on
+        # vendor/sedumi-upstream/examples/nb.mat (394 Lorentz blocks):
+        # the one-time symbchol() ordering ends up missing positions
+        # that only become numerically nonzero from iteration ~4 onward,
+        # so numeric_cholesky's (fixed) sparsity pattern silently can't
+        # represent them, degrading the PCG preconditioner until PCG
+        # stops converging within the iteration cap.
+        # A structurally-nonzero placeholder d["q2"] here (used only to
+        # size this one-time pattern, then discarded -- the real
+        # per-iteration d/DAt/ADA below and inside the main loop are
+        # unaffected) ensures symbchol()'s ordering includes every
+        # position that can ever become numerically nonzero, not just
+        # iteration 1's.
+        d_symbolic = dict(d)
+        d_symbolic["q2"] = np.ones_like(np.asarray(d["q2"]))
+        DAt_symbolic = getDAtm(A2, Ablkjc, dense, DAtdenq, d_symbolic, K2)
+        ADA_symbolic, _ = getada(A2, K2, d_symbolic, DAt_symbolic)
+
         ADA, _absd0 = getada(A2, K2, d, DAt)
-        Lsym = symbchol(ADA)
+        Lsym = symbchol(ADA_symbolic)
         symLden = symbcholden(Lsym, dense, DAt)
 
     n = vfrm["lab"].size

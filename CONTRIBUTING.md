@@ -43,7 +43,7 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 | Phase 3-c | 内点法の反復制御ロジック(sdinit〜optstep)移植 | **完了** |
 | Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
 | Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **未着手** |
-| Phase 5 | 検証・ベンチマーク | **未着手** |
+| Phase 5 | 検証・ベンチマーク | **一部完了(実問題での検証は完了、性能ベンチマークは未着手)** |
 | Phase 6 | パッケージング・リリース | **未着手** |
 
 Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PSD(半正定値
@@ -61,6 +61,25 @@ Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PS
 `pars.denf=3` で `getdense.m` の検出閾値を意図的に下げたケース)でも
 Octave版と `iter`/`numerr`/`pinf`/`dinf`/`x` が一致することを確認済み
 (`y` は §6 の「双対解の非一意性」を参照)。
+
+**Phase 5(実問題での検証)も完了**(`tests/test_golden_end_to_end.py`):
+Phase 0 の golden reference が対象にしていた実問題(SDPLIB由来、
+`vendor/sedumi-upstream/examples/`、`nb`/`arch0`/`control07`/`trto3`/
+`OH_2Pi_STO-6GN9r12g1T2`。`quantum` は `K.scomplex`/`K.ycomplex` を使う
+複素Hermitian PSD問題でスコープ外のため除外)で `sedumipy.sedumi()` を
+実行し、Octave実機の golden reference と目的関数値が一致することを
+確認した。この検証の過程で以下の2件の実バグを発見・修正した(詳細は
+§6):
+- `K.s==0`(LP+SOCPのみ)パスのADA記号的コレスキー順序が、Lorentz錐
+  のarrow項(`d.q2`)に依存するsparsity patternの一部を見落としており、
+  `d.q2`が育つにつれてCholesky分解が不正確になりPCGが発散するバグ
+  (`nb.mat`、396個のSOCPブロックで顕在化)。
+- `cpspdiag`(`getada3`のK.s==0分岐が呼ぶ診断用の対角成分抽出)が
+  `ibsearch`マクロ経由で`bsearch()`を使っており、そのコンパレータが
+  `sortnnz.c`/`iswnbr.c`と同種のqsort/bsearchコンパレータ未定義動作を
+  踏んでいた(§6参照)。ただし実際のsedumi.py呼び出し経路では
+  `K.s==0`のとき`getada3`自体が呼ばれないため、実害はテスト
+  (`test_getada_no_psd_blocks`)止まりだった。
 
 ## 3. ディレクトリ構成
 
@@ -238,6 +257,54 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
   比較する形にしている。**同じ理由で `At` がフルランクとは限らない
   ランダム生成テストフィクスチャを新規に作る際は、`y` を厳密比較する
   前に `rank(At)==m` かどうかを確認すること。**
+- **`K.s==0` パスの一回限りのADA記号的コレスキー順序が、Lorentz錐の
+  arrow項に依存するsparsity patternの一部を見落としていた。**
+  `sedinit.py` はスケーリング点 `d["q2"]`(各Lorentz錐のarrow部分の
+  スカラー)を必ず厳密に0から開始する(`sdinit.m`の`d.q2 = zeros(...)`
+  通り)。`sedumi.py`の`K.s==0`分岐は、この最初の`d`(=`d.q2=0`)で
+  一度だけ`ADA = getada(A,K,d,DAt)`を計算し、その**数値的な**
+  sparsity patternをそのまま`symbchol(ADA)`に渡して以後全反復で使い
+  回していた。ところが`getada.py`のLorentz項
+  (`DAt_q.T @ DAt_q`、`DAt.q[k,j] = d.q1[k]*Aj[k] + d.q2[k]*(...)`)
+  は、`d.q2=0`のとき同じLorentz錐ブロックを共有するだけで行方向には
+  重ならない制約ペア `(i,j)` に対する寄与が構造的にまるごと消えて
+  しまう ―― つまり反復1時点のADAは、後の反復で`d.q2`が育つにつれて
+  実際には非ゼロになる位置を欠いた、過小なsparsity patternになって
+  いた。`numeric_cholesky`はこの(固定された)symbolic patternの外側
+  には書き込めないため、`d.q2`が育つ反復(実際には3〜5反復目以降)
+  からCholesky分解が徐々に不正確になり、PCGの前処理性能が崩れて
+  反復回数上限に張り付き、最終的に誤った解に収束する。
+  `vendor/sedumi-upstream/examples/nb.mat`(LP+396個のSOCPブロック)
+  で実際に確認: 本家Octave版は20反復・`numerr=0`で収束するのに対し、
+  修正前のPython版は9反復で`numerr=2`(深刻な数値エラー)を報告して
+  完全に異なる値を返していた。本家`sedumi.m`はこの問題を、
+  `getsymbada.m`ベースの構造的(値に依存しない)pattern構築を
+  `sum(K.s)`の値に関わらず常に`sdinit`より前に実行することで回避して
+  いる(本ファイルの過去のこの箇所の記述、および`sedumi.py`自身の
+  SCOPEドキュストリングが「実装を簡略化した既知の相違点」として
+  触れていた箇所)。**修正**: `sedumi.py`の`K.s==0`分岐で、
+  `symbchol()`に渡す一度限りのADAだけは`d["q2"]`を(捨てるための
+  ローカルコピーで)強制的に非ゼロにしたものから構築するようにし、
+  以後の各反復で実際に使う`d`/`DAt`/`ADA`には一切手を加えないように
+  した。`tests/test_golden_end_to_end.py`(Phase 5, §7参照)で
+  `nb`/`arch0`/`control07`/`trto3`/`OH_2Pi_STO-6GN9r12g1T2`の5問題
+  全てがOctave実機の結果と一致することを確認済み。
+- **`getada3`の`K.s==0`分岐が呼ぶ`cpspdiag`も、`sortnnz.c`/`iswnbr.c`
+  と同じqsort/bsearchコンパレータ未定義動作を踏んでいた。**
+  `cpspdiag`は`blksdp.h`の`ibsearch`マクロ(=標準ライブラリの
+  `bsearch()`)経由でADAの対角成分を探す。`ibsearch`はこの探索に
+  `char`を返す`icmp()`を`COMPFUN`(`int(*)(const void*,const void*)`)
+  にキャストして渡しており、これも未定義動作 ―― 実際にこのport の
+  ビルドでは`bsearch()`が対角成分を一度も見つけられず、`absd`が
+  (対角成分が正しくソートされた形で存在しているにもかかわらず)
+  常に全て0.0になっていた(`tests/test_getada.py::test_getada_no_psd_blocks`
+  で発覚)。ただし`sedumi.py`の実際の呼び出し経路では、`getada3`
+  自体が`has_psd=True`(=`K.s`が非空、したがって内部的に`sdpN>0`)の
+  ときしか呼ばれないため、この`sdpN==0`分岐は実運用では到達しない
+  デッドコードであり実害はなかった。`sortnnz`/`iswnbr`のときと同じ
+  方針で解決 ―― `cpspdiag`はctypesバインディングをやめ、
+  `scipy.sparse`の`.diagonal()`で直接対角成分を取る(`cpspdiag.c`
+  自身のドキュメントコメント通りの意図)Python実装に置き換えた。
 
 ## 7. 残っている作業(優先度が高いと思われる順)
 
@@ -266,8 +333,13 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
 2. **Phase 4: 高レベルAPI・入出力互換層。** `.mat`/SDPA形式の読み書き、
    `sedumi()` のPython的に自然なシグネチャ・引数バリエーション対応
    (現状 `sedumi(A,b,c,K,pars=None)` の単純な形のみ)。
-3. **Phase 5: 検証・ベンチマーク。** Phase 0 の golden reference
-   (`tests/golden/`)に対する網羅的な回帰テスト、性能比較。
+3. ~~**Phase 5: 検証(golden reference実問題での回帰テスト)。**~~ **完了。**
+   `tests/test_golden_end_to_end.py` が Phase 0 の golden reference
+   対象問題(`vendor/sedumi-upstream/examples/`)を実際に
+   `sedumipy.sedumi()` に通し、Octave実機の結果と一致することを検証
+   する(§2「Phase 5」、§6の2件のバグ修正を参照)。**性能ベンチマーク
+   はまだ未着手**(Octave版との実行時間比較、より大規模な問題での
+   スケーラビリティ計測など)。
 4. **Phase 6: パッケージング。** `cibuildwheel` 等でのwheel化、
    `libsedumi.so` の同梱方法の検討(現状はビルド済みバイナリを
    そのままリポジトリに置いている)。

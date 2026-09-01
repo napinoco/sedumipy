@@ -91,6 +91,7 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
         dense["A"] = sp.csc_matrix((b2.size, 0))
 
     if has_psd:
+        is_dense = False  # getada_psd() ignores DAt["q"]'s representation
         Ablkjc, Aord, ADA = build_aord(A2, K2, dense)
         Lsym = symbchol(ADA)
         symLden = symbcholden(Lsym, dense, {"denq": DAtdenq})
@@ -136,8 +137,24 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
         Aord = None
         q_pattern = build_q_pattern(A2, Ablkjc, K2, dense)
         ADA_symbolic = getsymbada(A2, Ablkjc, q_pattern, K2["sblkstart"])
+        # getDAtm()/getada() rebuild ADA every iteration of the main loop
+        # below, so which in-memory form (sparse vs dense) they use for
+        # it matters for runtime, not just memory: reuse getsymbada()'s
+        # own density verdict (same >0.9 threshold it already applies to
+        # its own fallback) rather than adding a second, inconsistent
+        # size/density cutoff. Computed once, from a matrix already in
+        # hand -- O(1) beyond the getsymbada() call above regardless of
+        # m -- and threaded through every getDAtm() call for this solve
+        # (getada() itself just follows whatever representation DAt["q"]
+        # comes in as). See getada.py's SCOPE docstring for why this
+        # matters: sparse @ sparse avoids OOM on large near-sparse ADA
+        # (DIMACS's nql180/qssp180, m ~ 1.3e5) but is pure overhead
+        # relative to a dense BLAS matmul when ADA comes out dense/
+        # near-dense anyway (e.g. nb.mat, m=123).
+        m2 = A2.shape[1]
+        is_dense = (ADA_symbolic.nnz / (m2 * m2) if m2 else 0.0) > 0.9
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
-        DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2)
+        DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2, is_dense=is_dense)
         DAtdenq = DAt["denq"]
 
         ADA, _absd0 = getada(A2, K2, d, DAt)
@@ -169,7 +186,7 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
             pars["stepdif"] = 1
 
         # ---- ADA update + factorization ----
-        DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2)
+        DAt = getDAtm(A2, Ablkjc, dense, DAtdenq, d, K2, is_dense=is_dense)
         DAtdenq = DAt["denq"]
         if has_psd:
             ADA, absd = getada_psd(ADA, A2, Ablkjc, Aord, DAt, d, K2)

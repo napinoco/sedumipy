@@ -297,6 +297,34 @@ def _as_index_array(x):
     return arr, ptr
 
 
+def _cached_csc_solve_arrays(L_csc):
+    """(Ljc, Ljc_p, Lir, Lir_p, Lpr, Lpr_p) for fwsolve()/bwsolve(), memoized
+    on the L_csc object itself.
+
+    L_csc.indptr/.indices/.data never change across the many fwsolve()/
+    bwsolve() calls PCG makes against the same factorization within one
+    outer IPM iteration (only the right-hand side `y` does) -- but scipy
+    always normalizes constructed csc_matrix indices to int32/int64
+    (verified empirically: passing uintp indices into
+    scipy.sparse.csc_matrix() does not stick), so _as_index_array()'s
+    uintp cast was previously redone from scratch on every single call.
+    For a problem with a large nnz(L) (e.g. DIMACS qssp180old, nnz(L) ~
+    8.3e7) that reconversion cost dominates runtime -- cProfile on 5
+    outer iterations showed numpy.ascontiguousarray alone at 130s/462s
+    (28%) of total time, mostly attributable to exactly this. Caching it
+    per L_csc object (a fresh object every outer iteration, so this can
+    never go stale) removes the redundant work entirely without changing
+    any computed value."""
+    cache = getattr(L_csc, "_sedumipy_solve_cache", None)
+    if cache is None:
+        Ljc, _ = _as_index_array(L_csc.indptr)
+        Lir, _ = _as_index_array(L_csc.indices)
+        Lpr, _ = _as_double_array(L_csc.data)
+        cache = (Ljc, Ljc.ctypes.data_as(c_size_t_p), Lir, Lir.ctypes.data_as(c_size_t_p), Lpr, Lpr.ctypes.data_as(c_double_p))
+        L_csc._sedumipy_solve_cache = cache
+    return cache
+
+
 def fwsolve(L_csc, xsuper, y):
     """Forward-solve y := L \\ y in place, where L is the unit-lower-
     triangular factor from SeDuMi's supernodal Cholesky (blkchol), stored
@@ -308,9 +336,7 @@ def fwsolve(L_csc, xsuper, y):
     This wraps fwsolve() in fwblkslv.c (sedumi's forward substitution
     kernel) with no MATLAB/Octave/MEX layer at all.
     """
-    Ljc, Ljc_p = _as_index_array(L_csc.indptr)
-    Lir, Lir_p = _as_index_array(L_csc.indices)
-    Lpr, Lpr_p = _as_double_array(L_csc.data)
+    Ljc, Ljc_p, Lir, Lir_p, Lpr, Lpr_p = _cached_csc_solve_arrays(L_csc)
     xs, xs_p = _as_index_array(xsuper)
     ya, y_p = _as_double_array(y)
 
@@ -326,9 +352,7 @@ def fwsolve(L_csc, xsuper, y):
 def bwsolve(L_csc, xsuper, y):
     """Backward-solve y := L' \\ y in place -- see fwsolve()'s docstring;
     wraps bwsolve() in bwblkslv.c."""
-    Ljc, Ljc_p = _as_index_array(L_csc.indptr)
-    Lir, Lir_p = _as_index_array(L_csc.indices)
-    Lpr, Lpr_p = _as_double_array(L_csc.data)
+    Ljc, Ljc_p, Lir, Lir_p, Lpr, Lpr_p = _cached_csc_solve_arrays(L_csc)
     xs, xs_p = _as_index_array(xsuper)
     ya, y_p = _as_double_array(y)
 
@@ -705,6 +729,17 @@ def numeric_cholesky(sym: dict, X_csc, pars: dict | None = None, absd=None) -> d
     L_csc = scipy.sparse.csc_matrix(
         (Lpr, Lir.astype(np.int64), Ljc.astype(np.int64)), shape=(m, m)
     )
+    # Ljc/Lir are already uintp and Lpr already float64 right here -- feed
+    # them straight into fwsolve()/bwsolve()'s cache (see
+    # _cached_csc_solve_arrays()) instead of letting it re-derive uintp
+    # copies later from L_csc.indptr/.indices, which are the int64 copies
+    # scipy just normalized them into two lines up. Skips one of the two
+    # redundant dtype round-trips a large nnz(L) would otherwise pay for.
+    L_csc._sedumipy_solve_cache = (
+        Ljc, Ljc.ctypes.data_as(c_size_t_p),
+        Lir, Lir.ctypes.data_as(c_size_t_p),
+        Lpr, Lpr.ctypes.data_as(c_double_p),
+    )
 
     return {
         "L": L_csc,
@@ -812,7 +847,17 @@ def qblkmul(mu, d, blkstart):
     (1-indexed, as in the .m/MEX convention -- see qblkmul.m). qblkmul.c
     has no separable core function (the whole computation lives in its
     mexFunction), so this ports that logic directly to NumPy rather than
-    binding a C function that doesn't exist as such."""
+    binding a C function that doesn't exist as such.
+
+    Vectorized via np.repeat rather than a per-block Python for loop: on
+    a problem with many Lorentz blocks (e.g. DIMACS qssp180old, 65341 of
+    them), a `for k in range(nblk)` loop pays Python-interpreter
+    per-iteration overhead tens of thousands of times per call (cProfile
+    on 5 outer iterations showed this function's own loop body at 49.7s
+    of self time across 334 calls). np.repeat(mu, block_sizes) expands
+    each mu[k] to its block's width in one vectorized call, computing the
+    exact same per-element products mu[k]*d[...] in the same order --
+    bug-for-bug identical output, no Python-level loop."""
     import numpy as np
 
     mu = np.ascontiguousarray(mu, dtype=np.float64).ravel()
@@ -826,14 +871,15 @@ def qblkmul(mu, d, blkstart):
             d = d[nblk:]
         else:
             d = d[int(blkstart[0]) :]
+    # The loop this replaces only ever reads positions [0, span) of the
+    # (already offset-adjusted) d above -- match that truncation exactly,
+    # since d can still be longer than span here (e.g. when the caller
+    # passes the whole state vector and blkstart[0] > 0 trims only the
+    # leading LP/arrow part, not any unrelated trailing data).
+    d = d[:span]
 
-    out = np.empty(span, dtype=np.float64)
-    pos = 0
-    for k in range(nblk):
-        nk = int(blkstart[k + 1] - blkstart[k])
-        out[pos : pos + nk] = mu[k] * d[pos : pos + nk]
-        pos += nk
-    return out
+    block_sizes = np.diff(blkstart)
+    return np.repeat(mu, block_sizes) * d
 
 
 def vecsym(x, K: dict):

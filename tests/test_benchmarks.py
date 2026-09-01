@@ -23,16 +23,42 @@ dropped:
     thetaG11, thetaG51; DIMACS: copo68, hamming_10_2, hamming_11_2,
     hamming_8_3_4, hamming_9_5_6, sched_100_100_orig, sched_200_100_orig,
     sched_200_100_scaled, bm1, nql60(old), qssp60(old), and the "-15"
-    TORUS instances (single ~3375-order dense SDP block); nql180(old)/
-    qssp180(old) still belong here even though getdatm.py's own
-    `DAt_q.todense()` OOM on them is fixed (getdatm.py/getada.py now
-    keep DAt.q sparse throughout instead of densifying a >30 GiB
-    lorN x m array for what's a sparse matrix in memory) -- past that
-    fix they now run within a normal memory budget but still hit
-    numerr=2 within the first couple of iterations, the same failure
-    mode as the next bullet's nb_L2/nql30old/qssp30old but not yet
-    itself root-caused, so they stay excluded here rather than added
-    with a wrong reference-value expectation).
+    TORUS instances (single ~3375-order dense SDP block); nql180old/
+    qssp180old also belong here (below). nql180/qssp180 themselves used
+    to belong here too (getdatm.py's old `DAt_q.todense()` OOM'd on
+    them, and past that fix they still hit numerr=2 within the first
+    couple of iterations) but are now confirmed fixed: re-tested
+    directly (not via this test file, since neither has a published
+    reference objective -- both DIMACS README rows read "N/A" -- so
+    there's nothing to parametrize into DIMACS_PARAMS) after the
+    getada.py/getdatm.py dense/sparse hybrid fix (see CONTRIBUTING.md
+    section 7 item 5), both now solve cleanly: nql180 numerr=0, iter=16,
+    ~39s; qssp180 numerr=0, iter=42, ~249s (internal consistency checked
+    via cx~=by, feasratio->1, r0=1e-8, since there's no published value
+    to check against). Left out of this file's parametrized tests
+    anyway since (a) no reference objective exists to assert against and
+    (b) qssp180 alone is far past the "timing" mark's "well under a
+    minute" bar. nql180old (inferior "old"-formulation variant, same
+    family as nql30old/qssp30old below) is a different, still-unresolved
+    story: it was cross-checked against the real Octave/MEX build (built
+    from source in this environment) and BOTH struggle badly on it (it's
+    a genuinely ill-conditioned instance -- the real build's own console
+    output shows `skip=5361` Cholesky pivots skipped by iteration 54),
+    but not identically: the real build still limps to numerr=1 (iter=54,
+    degraded but not a total failure), while this port gives up earlier
+    and worse (numerr=2, iter=27, feasratio=0.90, r0=0.53) -- unlike
+    nql30old/qssp30old, this is NOT simply "the real build fails too,
+    nothing to fix here"; there's a real, if narrow, robustness gap on
+    this specific hard instance. qssp180old (largest file in this
+    family, ~36 MB) didn't finish in either this port or a real-build run
+    within that investigation's time budget (550s each) and was left
+    unverified -- resolved in a later session by giving both builds a
+    much larger budget instead: the real build now completes in ~1705s
+    (numerr=2, iter=30), and this port completes in ~3557s (numerr=2,
+    iter=30) -- the exact same failing iteration on both, unlike
+    nql180old's gap. So qssp180old belongs with nql30old/qssp30old, not
+    with nql180old: a genuine solver limitation shared by both builds,
+    not a porting bug.
   - sedumi() returns numerr=2 (a genuine, reproducible solver failure,
     not a reference-value problem) on: SDPLIB none; DIMACS nb_L2,
     nql30old, qssp30old. nql30 used to be in this list too, but is now
@@ -64,6 +90,71 @@ dropped:
     located line-level bug, and forcing it off pars's own default for
     every problem risks trading this instance's failure for a worse
     trajectory on others that currently rely on the adaptive default.
+
+    Narrowed further, and now fully located (see CONTRIBUTING.md section
+    7 item 6 for the full derivation): dumping ADA/d/DAt.q from both the
+    real Octave/MEX build (a temporary `save()` inserted into a scratch
+    copy of sedumi.m's main loop, not committed) and this port at each
+    of the first 3 iterations on nb_L2 (839 Lorentz blocks feeding 123
+    constraints, no dense columns -- `getdense()` returns
+    `dense["cols"].size == dense["q"].size == 0` for this file, ruling
+    the dense-column/product-form machinery out entirely rather than
+    just "checked out fine") shows d.l/d.det matching to float noise
+    (~1e-13) through iteration 3, and d.q1/d.q2 (the Lorentz-block
+    scaling point) matching to float noise through the d used at the
+    *start* of iteration 2 -- but the d produced by iteration 2's step
+    (used at iteration 3) diverges by ~15% relative in d.q1's worst
+    entry, well past anything float-order noise explains, and this is
+    exactly where err["kcg"]/Lsd["kcg"] jump from 1/1 (iterations 1-2,
+    matching the real build) to 6/5.
+
+    This session went further than checking updtransfo.py line-by-line:
+    it actually transplanted the real build's own iteration-2
+    xscl/zscl/w/d (dumped via the same temporary save()) directly into
+    this port's updtransfo() and got the real build's exact iteration-3
+    d.q1/d.q2 back, bit for bit -- proving updtransfo.py innocent by
+    execution, not just by audit. Comparing this port's own iteration-2
+    xscl/zscl/w against the real build's next pinned down where the two
+    actually part ways: xscl/zscl and w["tdetx"]/w["tdetz"] all agree to
+    ~1e-13 (ordinary cross-implementation float noise for a 4196-d
+    vector), but w["lab"] itself disagrees by up to 7.6 -- wildly out of
+    proportion to inputs that agree to 1e-13. The cause is
+    widelen.py's `_build_w()` (a faithful port of widelen.m's own logic):
+    `lab2q`, the Lorentz-block eigenvalue term, is computed as
+    `halfxz + sqrt(tmp)` only `if np.all(tmp > 0)` across *all 839
+    Lorentz blocks at once* -- a single global all-or-nothing branch,
+    not a per-block one -- and falls back to the cruder `lab2q = halfxz`
+    for *every* block otherwise. Recomputing tmp from each build's own
+    iteration-2 xscl/zscl shows exactly one block (index 396 of 839)
+    sitting right on top of zero: tmp = +1.78e-15 in the real build,
+    tmp = -1.78e-15 in this port -- a sign flip from sub-ULP rounding
+    noise between two independent floating-point pipelines (NumPy/SciPy
+    plus this port's own C kernels vs. Octave plus its BLAS), not from
+    any actual defect in either. That single flipped sign trips the
+    global `all()` and switches the fallback formula on for all 839
+    blocks at once, which is why a 1e-13-level input disagreement
+    balloons into a 7.6-level disagreement in w["lab"] and, propagated
+    through one honest updtransfo() call, ~15% in d.q1.
+    (Verified in both directions: feeding the real build's own
+    xscl/zscl into this port's `_build_w()` reproduces the real build's
+    w["lab"] exactly bit for bit; feeding this port's own xscl/zscl back
+    into the same function reproduces tmp[396] < 0 and the fallback
+    branch, matching what this port actually computed.)
+
+    That all-or-nothing branch is widelen.m's own design (present
+    unmodified in vendor/sedumi-upstream/widelen.m), not something this
+    port introduced -- plausibly a deliberate cheap safety net against
+    handing sqrt() a negative discriminant on *any* block, applied to
+    every block at once rather than per-block. Two independent
+    same-input floating-point pipelines occasionally landing on opposite
+    sides of an exact zero in a quantity like this is expected chaotic
+    sensitivity, not a locatable off-by-one or formula error -- no line
+    in updtransfo.py/widelen.py/tdet/ddot is wrong. Left unfixed for the
+    same reason `stepdif=1` isn't forced as pars's default (see above):
+    changing the branch's numerics to dodge this one instance's
+    coin-flip would be an algorithm-level change with unclear effects on
+    every other problem that currently relies on today's exact
+    branching, not a correctness fix.
   - SDPLIB hinf12: strong duality fails for this instance (duality gap
     ~28, matches sdpt3py's own documented exclusion of the same problem).
   - DIMACS hinf12/hinf13: the README marks both "(?)" (its own

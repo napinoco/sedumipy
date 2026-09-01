@@ -1,12 +1,20 @@
 """Port of getada.m: builds ADA = A*P(d)*A' for LP(+Lorentz) problems
-directly via dense/sparse linear algebra -- no C kernels, pure
-NumPy/SciPy. Used only by optstep.m's LP-optimality-projection path
-(sum(K.s)==0), which in real usage is the ONLY path optstep.m ever
-takes: sedumi.m only calls optstep.m when `lponly` (K.l==length(c)),
-which forces K.q and K.s empty too -- so the Lorentz-block loop below
-is exercised faithfully (it's real code in getada.m) but is dead code
-in practice, exactly like optstep.m's own getada1/getada2/getada3
-branch is for the sum(K.s)!=0 case that can never actually be reached.
+directly via sparse linear algebra -- no C kernels, pure NumPy/SciPy.
+Used both by optstep.m's LP-optimality-projection path (dead in
+practice there, since sedumi.m only calls optstep.m when `lponly`,
+which forces K.q and K.s empty too) AND, for real, by this port's own
+sedumi.py main loop whenever `has_psd` is false -- i.e. every LP+SOCP
+problem with no PSD blocks (K.s empty), where the Lorentz-block loop
+below is very much live code.
+
+DAt["q"] (lorN x m) and the ADA it feeds into are kept sparse
+throughout: densifying either is what made getdatm.py's old
+`DAt_q.todense()` OOM on large-lorN problems like DIMACS's
+nql180/qssp180 (m ~ 1.3e5, lorN ~ 3.2e4 -- a dense DAt_q alone is
+>30 GiB, and the dense ADA = DAt_q.T @ DAt_q this function used to
+build would be m x m, far bigger still). A*P(d)*A' stays about as
+sparse as A itself for these problems, so sparse @ sparse is both the
+correct fix and the fast path.
 """
 
 from __future__ import annotations
@@ -36,9 +44,10 @@ def getada(A, K: dict, d: dict, DAt: dict):
             lo, hi = int(qblkstart[i]), int(qblkstart[i + 1])
             scalingvector[lo - 1 : hi - 1] = d["det"][i]
 
-    DAt_q = np.asarray(DAt["q"])
+    DAt_q = DAt["q"]
+    DAt_q = DAt_q.tocsr() if sp.issparse(DAt_q) else sp.csr_matrix(DAt_q)
     ADA = DAt_q.T @ DAt_q
-    ADA = ADA + (Alq.T @ sp.diags(scalingvector) @ Alq).toarray()
+    ADA = ADA + Alq.T @ sp.diags(scalingvector) @ Alq
     ADA = sp.csc_matrix(ADA)
     absd = np.asarray(ADA.diagonal()).ravel()
     return ADA, absd

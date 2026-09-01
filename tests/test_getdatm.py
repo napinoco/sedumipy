@@ -63,7 +63,7 @@ def test_getdatm_matches_octave():
 
     DAt_exp = data["DAt"][0, 0]
     q_exp = _to_dense(DAt_exp["q"])
-    np.testing.assert_allclose(DAt["q"], q_exp, rtol=1e-9, atol=1e-11)
+    np.testing.assert_allclose(_to_dense(DAt["q"]), q_exp, rtol=1e-9, atol=1e-11)
 
 
 def test_getdatm_dense_lorentz_block_matches_octave():
@@ -87,8 +87,8 @@ def test_getdatm_dense_lorentz_block_matches_octave():
     q_exp = _to_dense(DAt2_exp["q"])
     denq_exp = _to_dense(DAt2_exp["denq"])
 
-    np.testing.assert_allclose(DAt["q"], q_exp, rtol=1e-9, atol=1e-11)
+    np.testing.assert_allclose(_to_dense(DAt["q"]), q_exp, rtol=1e-9, atol=1e-11)
     np.testing.assert_allclose(_to_dense(DAt["denq"]), denq_exp, rtol=1e-9, atol=1e-11)
     # getDAtm.m zeroes DAt.q's dense-block rows after folding their
     # contribution into DAt.denq.
-    np.testing.assert_array_equal(DAt["q"][dense["q"] - 1, :], 0.0)
+    np.testing.assert_array_equal(_to_dense(DAt["q"][dense["q"] - 1, :]), 0.0)

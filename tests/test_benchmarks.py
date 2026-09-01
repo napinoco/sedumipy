@@ -24,13 +24,46 @@ dropped:
     hamming_8_3_4, hamming_9_5_6, sched_100_100_orig, sched_200_100_orig,
     sched_200_100_scaled, bm1, nql60(old), qssp60(old), and the "-15"
     TORUS instances (single ~3375-order dense SDP block); nql180(old)/
-    qssp180(old) don't even get that far -- getdatm.py's own
-    `DAt_q.todense()` call OOMs trying to allocate a >30 GiB dense array
-    for what's a sparse matrix in memory, a real inefficiency outside
-    this test's scope to fix).
+    qssp180(old) still belong here even though getdatm.py's own
+    `DAt_q.todense()` OOM on them is fixed (getdatm.py/getada.py now
+    keep DAt.q sparse throughout instead of densifying a >30 GiB
+    lorN x m array for what's a sparse matrix in memory) -- past that
+    fix they now run within a normal memory budget but still hit
+    numerr=2 within the first couple of iterations, the same failure
+    mode as the next bullet's nb_L2/nql30old/qssp30old but not yet
+    itself root-caused, so they stay excluded here rather than added
+    with a wrong reference-value expectation).
   - sedumi() returns numerr=2 (a genuine, reproducible solver failure,
-    not a reference-value problem) on: SDPLIB none; DIMACS nb_L2, nql30,
-    nql30old, qssp30old.
+    not a reference-value problem) on: SDPLIB none; DIMACS nb_L2,
+    nql30old, qssp30old. nql30 used to be in this list too, but is now
+    fixed (see below) and has a DIMACS_PARAMS row instead. Cross-checked
+    against a from-source build of the real
+    Octave/MEX SeDuMi (vendor/sedumi-upstream, `install_sedumi`) on the
+    same .mat files: qssp30old (and nql30old, same family/shape) fails
+    there too (numerr=2), confirming a genuine solver limitation on
+    those instances, not a porting bug. nb_L2 is the opposite: the real
+    Octave/MEX build solves it cleanly (numerr=0, iter=16); this port
+    still doesn't. That gap is narrowed but not yet closed -- passing
+    `stepdif=1` (skipping pars.stepdif's default "Adaptive
+    Step-Differentiation" auto-switch entirely) makes this port solve
+    nb_L2 cleanly too (numerr=0, iter=17), and the *default* run's own
+    per-iteration CG counts (`err["kcg"]`/`Lsd["kcg"]`, the same
+    quantities real sedumi.m's console "cg cg" columns report) run well
+    above the real build's throughout -- so the auto-switch fires
+    several iterations earlier here than it does in the real build,
+    changing the solved trajectory before it can recover -- but nothing
+    downstream of that (dense-column detection, the one-time symbolic
+    ADA pattern now built via getsymbada() same as the has_psd branch,
+    numeric Cholesky -- `skip=0` every iteration, i.e. never missing a
+    position it needs) turned up an actual defect, and every PCG
+    sub-solve genuinely converges (residual well under `restol`, never
+    the stagnation branch) -- just using more iterations than the real
+    build's own preconditioner needs for the same linear system. Left
+    excluded, not force-fixed with `stepdif=1`, since that's a
+    numerical-sensitivity symptom pinned to a specific mechanism, not a
+    located line-level bug, and forcing it off pars's own default for
+    every problem risks trading this instance's failure for a worse
+    trajectory on others that currently rely on the adaptive default.
   - SDPLIB hinf12: strong duality fails for this instance (duality gap
     ~28, matches sdpt3py's own documented exclusion of the same problem).
   - DIMACS hinf12/hinf13: the README marks both "(?)" (its own
@@ -279,6 +312,7 @@ DIMACS_PARAMS = [
     pytest.param("minphase", "FILTER", 5.98, 0.01196, marks=pytest.mark.mini),
     pytest.param("hamming_7_5_6", "HAMMING", -42.66667, 0.08533333, marks=pytest.mark.timing),
     pytest.param("hamming_9_8", "HAMMING", -224, 0.448, marks=pytest.mark.extended),
+    pytest.param("nql30", "NQL", -0.9460, 0.001892, marks=pytest.mark.timing),
     pytest.param("qssp30", "QSSP", -6.496675, 0.01299335, marks=pytest.mark.timing),
     pytest.param("sched_100_100_scaled", "SCHED", 27.3307, 0.0546614, marks=pytest.mark.extended),
     pytest.param("sched_100_50_orig", "SCHED", 181889.9, 363.7798, marks=pytest.mark.extended),

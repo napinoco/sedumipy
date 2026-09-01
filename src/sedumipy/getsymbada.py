@@ -32,10 +32,18 @@ def getsymbada(At, Ablkjc, q_pattern, psdblkstart):
     Falls back to a fully-dense m x m pattern (matching the real .m's
     `spars(...)==1` / `spars(...)>0.9` short-circuits) whenever any
     intermediate pattern is already that dense -- avoids computing a
-    products that would be dense anyway.
+    products that would be dense anyway. That fallback pattern is only
+    materialized (`np.ones((m, m))`) when one of those checks actually
+    fires, not unconditionally on every call -- for a problem with a
+    large m and a genuinely sparse ADA (e.g. DIMACS's nql180/qssp180,
+    m ~ 1.3e5), eagerly building it regardless would itself OOM on a
+    dense m x m array nobody ends up using, the same class of bug as
+    getdatm.py's old `DAt_q.todense()`.
     """
     m = At.shape[1]
-    dense_pattern = sp.csc_matrix(np.ones((m, m)))
+
+    def _dense_pattern():
+        return sp.csc_matrix(np.ones((m, m)))
 
     Alpq = _native.extractA(At, Ablkjc, 0, 3, (1, int(psdblkstart[0])))
     Alpq.data[:] = 1.0
@@ -43,18 +51,18 @@ def getsymbada(At, Ablkjc, q_pattern, psdblkstart):
 
     have_q = q_pattern is not None and q_pattern.shape[0] > 0
     if _spars(Ablks) == 1.0 or _spars(Alpq) == 1.0 or (have_q and _spars(q_pattern) == 1.0):
-        return dense_pattern
+        return _dense_pattern()
 
     if q_pattern is None:
         symbada = sp.csc_matrix((m, m))
     else:
         symbada = (q_pattern.T @ q_pattern).tocsc()
     if _spars(symbada) > 0.9:
-        return dense_pattern
+        return _dense_pattern()
 
     symbada = (symbada + Alpq.T @ Alpq).tocsc()
     if _spars(symbada) > 0.9:
-        return dense_pattern
+        return _dense_pattern()
 
     symbada = (symbada + Ablks.T @ Ablks).tocsc()
     return symbada

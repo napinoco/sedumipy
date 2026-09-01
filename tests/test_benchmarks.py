@@ -23,16 +23,37 @@ dropped:
     thetaG11, thetaG51; DIMACS: copo68, hamming_10_2, hamming_11_2,
     hamming_8_3_4, hamming_9_5_6, sched_100_100_orig, sched_200_100_orig,
     sched_200_100_scaled, bm1, nql60(old), qssp60(old), and the "-15"
-    TORUS instances (single ~3375-order dense SDP block); nql180(old)/
-    qssp180(old) still belong here even though getdatm.py's own
-    `DAt_q.todense()` OOM on them is fixed (getdatm.py/getada.py now
-    keep DAt.q sparse throughout instead of densifying a >30 GiB
-    lorN x m array for what's a sparse matrix in memory) -- past that
-    fix they now run within a normal memory budget but still hit
-    numerr=2 within the first couple of iterations, the same failure
-    mode as the next bullet's nb_L2/nql30old/qssp30old but not yet
-    itself root-caused, so they stay excluded here rather than added
-    with a wrong reference-value expectation).
+    TORUS instances (single ~3375-order dense SDP block); nql180old/
+    qssp180old also belong here (below). nql180/qssp180 themselves used
+    to belong here too (getdatm.py's old `DAt_q.todense()` OOM'd on
+    them, and past that fix they still hit numerr=2 within the first
+    couple of iterations) but are now confirmed fixed: re-tested
+    directly (not via this test file, since neither has a published
+    reference objective -- both DIMACS README rows read "N/A" -- so
+    there's nothing to parametrize into DIMACS_PARAMS) after the
+    getada.py/getdatm.py dense/sparse hybrid fix (see CONTRIBUTING.md
+    section 7 item 5), both now solve cleanly: nql180 numerr=0, iter=16,
+    ~39s; qssp180 numerr=0, iter=42, ~249s (internal consistency checked
+    via cx~=by, feasratio->1, r0=1e-8, since there's no published value
+    to check against). Left out of this file's parametrized tests
+    anyway since (a) no reference objective exists to assert against and
+    (b) qssp180 alone is far past the "timing" mark's "well under a
+    minute" bar. nql180old/qssp180old (inferior "old"-formulation
+    variants, same family as nql30old/qssp30old below) are a different,
+    still-unresolved story: nql180old was cross-checked against the real
+    Octave/MEX build (built from source in this environment) and BOTH
+    struggle badly on it (it's a genuinely ill-conditioned instance --
+    the real build's own console output shows `skip=5361` Cholesky
+    pivots skipped by iteration 54), but not identically: the real build
+    still limps to numerr=1 (iter=54, degraded but not a total failure),
+    while this port gives up earlier and worse (numerr=2, iter=27,
+    feasratio=0.90, r0=0.53) -- unlike nql30old/qssp30old, this is NOT
+    simply "the real build fails too, nothing to fix here"; there's a
+    real, if narrow, robustness gap on this specific hard instance.
+    qssp180old (largest file in this family, ~36 MB) didn't finish in
+    either this port or a real-build run within this investigation's
+    time budget (550s each), so it's unverified rather than confirmed
+    either way -- left excluded, not claimed as "same as nql180old".
   - sedumi() returns numerr=2 (a genuine, reproducible solver failure,
     not a reference-value problem) on: SDPLIB none; DIMACS nb_L2,
     nql30old, qssp30old. nql30 used to be in this list too, but is now

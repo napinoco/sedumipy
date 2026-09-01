@@ -64,6 +64,33 @@ dropped:
     located line-level bug, and forcing it off pars's own default for
     every problem risks trading this instance's failure for a worse
     trajectory on others that currently rely on the adaptive default.
+
+    Narrowed further (still open): dumping ADA/d/DAt.q from both the
+    real Octave/MEX build (a temporary `save()` inserted into a scratch
+    copy of sedumi.m's main loop, not committed) and this port at each
+    of the first 3 iterations on nb_L2 (839 Lorentz blocks feeding 123
+    constraints, no dense columns -- `getdense()` returns
+    `dense["cols"].size == dense["q"].size == 0` for this file, ruling
+    the dense-column/product-form machinery out entirely rather than
+    just "checked out fine") shows d.l/d.det matching to float noise
+    (~1e-13) through iteration 3, and d.q1/d.q2 (the Lorentz-block
+    scaling point) matching to float noise through the d used at the
+    *start* of iteration 2 -- but the d produced by iteration 2's step
+    (used at iteration 3) diverges by ~15% relative in d.q1's worst
+    entry, well past anything float-order noise explains, and this is
+    exactly where err["kcg"]/Lsd["kcg"] jump from 1/1 (iterations 1-2,
+    matching the real build) to 6/5. updtransfo.py itself is a faithful
+    line-by-line port of updtransfo.m (checked side by side, no
+    discrepancy) -- so whatever produces this divergence is upstream of
+    it, in iteration 2's predictor(+corrector) step/step-length
+    selection (wregion.py/widelen.py/trydif.py/stepdif.py/maxstep.py),
+    not in the scaling-point update formula or the PCG solve quality
+    (which matches, kcg=1/1, at iteration 2 despite already carrying
+    whatever difference shows up in the *next* d). Next step for
+    whoever picks this up: bisect iteration 2's own step computation the
+    same way (dump x/z/w and the chosen step length pP/pD from both
+    builds partway through wregion.py) rather than re-checking
+    everything downstream of updtransfo again.
   - SDPLIB hinf12: strong duality fails for this instance (duality gap
     ~28, matches sdpt3py's own documented exclusion of the same problem).
   - DIMACS hinf12/hinf13: the README marks both "(?)" (its own

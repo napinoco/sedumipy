@@ -431,6 +431,43 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
    本当にPyPI配布可能なmanylinux wheelにするには`auditwheel repair`
    でこれらを同梱するか静的リンクに切り替える必要がある。今回は
    その作業までは行っていない)。
+5. **`getdatm.py`のOOM修正(`DAt.q`常時sparse化)が、逆にdenseな方が
+   速い小〜中規模問題を遅化させていた件。修正済み。** `has_psd=False`
+   (LP+SOCPのみ、K.s==0)経路で`DAt.q`/`ADA`を常にsparseで組み立てる
+   ように直した結果(OOM対策としては正しい)、mが小さくADAが
+   実質denseになる問題(例: `nb.mat`, m=123)では逆に約36%遅化して
+   いた(sparse-sparse積`csr_matmat`が全体の56%を占めることを
+   `cProfile`で確認)。`getsymbada()`が一度だけ計算する構造的ADA
+   パターンの密度(既存の0.9閾値をそのまま流用)から`is_dense`を
+   一度だけ判定し、`getDAtm()`/`getada()`がそれに応じてdense
+   (numpy, BLAS matmul)/sparse(scipy, OOM回避)を切り替えるように
+   `sedumi.py`から配線した。両分岐は値としてbug-for-bug同一(既存
+   テスト・ベンチマーク全て回帰なしを確認済み)。`nb.mat`で実測:
+   sparse固定(修正直後)2.12秒→ハイブリッド化後1.75秒(修正前の
+   dense固定1.56秒に近い水準まで回復)。大規模問題(`nql180`/
+   `qssp180`, m~1.3e5)は引き続きsparse経路を通るためOOMは再発しない。
+6. **DIMACS `nb_L2`のnumerr=2、原因をさらに絞り込み(未解決)。**
+   実機Octave/MEXビルド(`vendor/sedumi-upstream`、この環境に
+   `octave`/`liboctave-dev`/`libopenblas-dev`を追加導入して
+   `install_sedumi -rebuild`でビルド)と、この移植版の両方から
+   反復1〜3時点の`ADA`/`d`/`DAt.q`を書き出して直接突き合わせた結果:
+   `d.l`/`d.det`(LP・trace部分)は反復3まで浮動小数点誤差レベル
+   (~1e-13)で一致、`d.q1`/`d.q2`(Lorentz錐のスケーリング点)も
+   反復2開始時点までは同様に一致するが、**反復2のステップが生成する
+   `d`(=反復3で使われる`d`)で`d.q1`の最大成分が約15%相対誤差で
+   食い違う**(浮動小数点順序の違いでは説明できない量)。これが
+   ちょうど`err["kcg"]`/`Lsd["kcg"]`が実機の1/1から6/5へ跳ね上がる
+   反復と一致する。`updtransfo.py`は`updtransfo.m`と一行ずつ突き合わせ
+   済みで差分なし(=スケーリング点更新の式自体は正しい)なので、
+   原因はその手前、反復2の予測子(+補正子)ステップ/ステップ長選択
+   (`wregion.py`/`widelen.py`/`trydif.py`/`stepdif.py`/`maxstep.py`)
+   のどこかにある。次に取り組む場合は、反復2の`x`/`z`/`w`と選択された
+   ステップ長`pP`/`pD`を`wregion.py`の途中で同様にダンプして両実装を
+   突き合わせるのが次の一手(`updtransfo`より下流を再チェックしても
+   これ以上は絞り込めない)。密列(dense columns)は`nb_L2`では
+   `getdense()`が`dense["cols"]`/`dense["q"]`とも空を返すため無関係と
+   確定(以前の調査では「問題なさそうと確認」止まりだったが、今回で
+   完全に除外できた)。
 
 ## 8. テストの実行方法
 

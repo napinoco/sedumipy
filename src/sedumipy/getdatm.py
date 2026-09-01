@@ -24,6 +24,19 @@ the previous DAt.denq (or getdense()'s own Adotdden the very first
 time) -- only its sparsity pattern (shape m x len(dense.q)) is used, as
 a template `adendotd()` fills in-place; see _native.adendotd's
 docstring.
+
+`is_dense` (new, not in getDAtm.m -- sedumi.py's own hint, computed once
+from getsymbada()'s structural ADA pattern density and threaded through
+every call this port makes here) picks DAt.q's in-memory form: sparse
+(csr, the default) keeps `getada()`'s ADA = DAt.q' * DAt.q a sparse @
+sparse product, needed to avoid OOM on large-lorN/large-m problems like
+DIMACS's nql180/qssp180 (m ~ 1.3e5) where ADA stays about as sparse as A
+itself; dense (plain ndarray) instead avoids sparse-format bookkeeping
+overhead entirely, which dominates on problems where ADA already comes
+out dense/near-dense (e.g. nb.mat, m=123) -- there sparse @ sparse is
+pure overhead over what a dense BLAS matmul does directly. Bug-for-bug
+identical either way: the two branches below only pick data
+representation, not values.
 """
 
 from __future__ import annotations
@@ -34,7 +47,7 @@ import scipy.sparse as sp
 from . import _native
 
 
-def getDAtm(A, Ablkjc, dense: dict, DAtdenq, d: dict, K: dict) -> dict:
+def getDAtm(A, Ablkjc, dense: dict, DAtdenq, d: dict, K: dict, is_dense: bool = False) -> dict:
     """DAt = getDAtm(A,Ablkjc,dense,DAtdenq,d,K): A is the internal-format
     At (N x m, SeDuMi's own storage convention: rows are the N cone
     variables, columns are the m constraints)."""
@@ -63,7 +76,7 @@ def getDAtm(A, Ablkjc, dense: dict, DAtdenq, d: dict, K: dict) -> dict:
         )
         DAt_q = DAt_q + W @ A_vec
 
-    DAt_q = DAt_q.tocsr()
+    DAt_q = np.asarray(DAt_q.todense()) if is_dense else DAt_q.tocsr()
 
     dense_q = np.asarray(dense.get("q", np.zeros(0, dtype=np.int64))).ravel().astype(np.int64)
     if dense_q.size:
@@ -73,8 +86,11 @@ def getDAtm(A, Ablkjc, dense: dict, DAtdenq, d: dict, K: dict) -> dict:
     denq = _native.adendotd(dense, d, adotd_in, DAtdenq, qblkstart)
 
     if dense_q.size:
-        keep = np.ones(lorN)
-        keep[dense_q - 1] = 0.0
-        DAt_q = sp.diags(keep) @ DAt_q
+        if is_dense:
+            DAt_q[dense_q - 1, :] = 0.0
+        else:
+            keep = np.ones(lorN)
+            keep[dense_q - 1] = 0.0
+            DAt_q = sp.diags(keep) @ DAt_q
 
     return {"q": DAt_q, "denq": denq}

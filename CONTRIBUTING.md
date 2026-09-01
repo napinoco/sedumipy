@@ -613,8 +613,56 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
    (同16問題、LP+SOCP比率の高い問題も含む)いずれも回帰なしで合格
    済み。qssp180oldの`numerr=2`一致自体(項目7)には影響なし
    (計算結果はbug-for-bug同一)。
+9. **項目8の続き: 残っていた性能ボトルネックを調査 ―― ADA/DAt.qの
+   疎行列再構築は本家自身の設計、`numeric_cholesky`のuintp/int64
+   往復は一部のみ削減可能と判明。**
 
-## 8. テストの実行方法
+   修正後(項目8)の`qssp180old`最初5反復のcProfile(153秒)を
+   さらに分析し、残っている主要コストの性質を切り分けた:
+
+   - **ADA/DAt.qを毎反復scipy疎行列として一から組み立て直している
+     コスト(`numpy.array`経由でscipy内部が8.8秒)は、本家SeDuMi自身の
+     設計そのものであることを確認した。** `sum(K.s)==0`
+     (`qssp180old`が通る経路)用の`vendor/sedumi-upstream/getada.m`
+     (MEXではなく素の`.m`)を実際に読んだところ、`global ADA_sedumi_`
+     を`ADA_sedumi_ = sparse([],[],[],m,m,nnz(ADA_sedumi_))`で**毎回
+     空の疎行列として新規作成**し、`ADA_sedumi_ + DAt.q'*DAt.q`/
+     `ADA_sedumi_ + Alq'*diag(sparse(scalingvector))*Alq`という疎×疎
+     演算で組み立て直していた ―― まさにこの移植版の`getada.py`
+     (`scipy.sparse`での同等の疎×疎演算)と同じパターン。
+     `getDAtm.m`も`extractA`(MEX)で抽出した後
+     `spdiags(d.q1,0,nq,nq) * DAt.q`(疎対角行列を毎回新規作成して
+     掛ける)という、同じく都度組み立て直す実装だった。したがって
+     このコストはポーティングの非効率ではなく**忠実な移植の結果**
+     であり、修正の対象外と判断する。
+     (余談: PSDブロックがある`sum(K.s)!=0`経路の`getada1.c`/
+     `getada2.c`/`getada3.c`は対照的に、`getsymbada`が一度だけ確定
+     させた疎パターンを使い回し、`ADA_sedumi_`という同じグローバル
+     配列に**値だけ**書き込む「その場更新」設計になっている ――
+     本家は「PSDありなら使い回す、PSDなしなら毎回作り直す」という
+     非対称設計になっており、`qssp180old`が使う後者は本家の時点で
+     最適化されていない、ということのようだ。)
+   - **`numeric_cholesky`内の`Lir.astype(np.int64)`/
+     `Ljc.astype(np.int64)`(項目8の`astype`18秒のほぼ全て)は、
+     `scipy.sparse.csc_matrix`が索引配列をuintpでは保持せず必ず
+     int32/int64に正規化してしまう(実測確認済み)ことに起因する、
+     このコンテナ型を使う以上避けられないコスト**であり、項目8の
+     見積もり(この`astype`往復を丸ごと削減できる)は誤りだった。
+     実際に削減できたのは、`fwsolve()`/`bwsolve()`のキャッシュ
+     (`_cached_csc_solve_arrays()`)が反復ごとの初回アクセス時に
+     `L_csc.indptr`/`.indices`(int64)からuintpへ再変換していた分
+     (1反復につき1回、計5回)だけだった。**修正**: `numeric_cholesky`
+     が`L_csc`構築の直前にすでに持っているuintp版のLjc/Lirを、
+     そのままキャッシュへ直接注入する(`L_csc._sedumipy_solve_cache`
+     を`numeric_cholesky`自身が埋める)ことで、この最後の再変換を
+     省略。**効果は153秒→138秒(約10%減)** ―― 当初見積もった16%には
+     届かなかった。これ以上削るには`Lnum["L"]`をscipy疎行列から
+     uintpをそのまま保持する自前の軽量構造体に置き換える必要がある
+     (影響範囲がテストコード等にも及ぶ可能性がある、より大きな型
+     変更のリファクタリングになるため、今回は見送り)。
+
+   フルテストスイート(247件)、`pytest -m mini`(46問題)で回帰なし
+   を確認済み。
 
 ```
 cd sedumipy

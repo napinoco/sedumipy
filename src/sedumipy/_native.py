@@ -729,6 +729,17 @@ def numeric_cholesky(sym: dict, X_csc, pars: dict | None = None, absd=None) -> d
     L_csc = scipy.sparse.csc_matrix(
         (Lpr, Lir.astype(np.int64), Ljc.astype(np.int64)), shape=(m, m)
     )
+    # Ljc/Lir are already uintp and Lpr already float64 right here -- feed
+    # them straight into fwsolve()/bwsolve()'s cache (see
+    # _cached_csc_solve_arrays()) instead of letting it re-derive uintp
+    # copies later from L_csc.indptr/.indices, which are the int64 copies
+    # scipy just normalized them into two lines up. Skips one of the two
+    # redundant dtype round-trips a large nnz(L) would otherwise pay for.
+    L_csc._sedumipy_solve_cache = (
+        Ljc, Ljc.ctypes.data_as(c_size_t_p),
+        Lir, Lir.ctypes.data_as(c_size_t_p),
+        Lpr, Lpr.ctypes.data_as(c_double_p),
+    )
 
     return {
         "L": L_csc,

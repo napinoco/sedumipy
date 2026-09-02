@@ -120,15 +120,33 @@ if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
     # own PATH would cover the rest -- it does not, and ctypes.CDLL()
     # failed with "Could not find module ... or one of its dependencies"
     # in a real dev-install CI run despite gcc/openblas being correctly
-    # on PATH. Register every existing PATH directory explicitly too, so
-    # a dev install's MSYS2 mingw64/bin (wherever it happens to be
-    # rooted -- see tools/build_libsedumi.sh's own MSYS2_ROOT note) is
-    # actually searched, not just assumed to be.
+    # on PATH.
+    #
+    # A first attempt registered *every* PATH directory instead -- that
+    # backfired: a failed module import is evicted from sys.modules, so
+    # pytest's importorskip() re-executes this file's whole module body
+    # (including this loop) on every one of the ~47 test files that
+    # import sedumipy, without ever calling os.remove_dll_directory().
+    # Windows' internal DLL search path table isn't unbounded, and dozens
+    # of PATH entries times dozens of retries overflowed it -- confirmed
+    # in CI: even the single, first, always-valid _PKG_DIR call itself
+    # started failing with "WinError 206: filename or extension is too
+    # long" (a real limit on the cumulative registered search path, not
+    # a literal complaint about that one short path).
+    #
+    # Target the toolchain directory directly instead, the same way
+    # tools/build_libsedumi.sh resolves it (MSYS2_ROOT, defaulting to the
+    # standard C:\msys64 install location) -- bounded to two directories
+    # regardless of how many times this module gets re-executed.
     os.add_dll_directory(str(_PKG_DIR))
-    for _path_dir in os.environ.get("PATH", "").split(os.pathsep):
-        if _path_dir and os.path.isdir(_path_dir):
+    _msys2_root = os.environ.get("MSYS2_ROOT", r"C:\msys64")
+    for _candidate in (
+        os.path.join(_msys2_root, "mingw64", "bin"),
+        os.path.join(_msys2_root, "usr", "bin"),
+    ):
+        if os.path.isdir(_candidate):
             try:
-                os.add_dll_directory(_path_dir)
+                os.add_dll_directory(_candidate)
             except OSError:
                 pass
 

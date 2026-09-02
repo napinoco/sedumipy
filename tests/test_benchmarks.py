@@ -60,16 +60,36 @@ dropped:
     with nql180old: a genuine solver limitation shared by both builds,
     not a porting bug.
   - sedumi() returns numerr=2 (a genuine, reproducible solver failure,
-    not a reference-value problem) on: SDPLIB none; DIMACS nb_L2,
-    nql30old, qssp30old. nql30 used to be in this list too, but is now
-    fixed (see below) and has a DIMACS_PARAMS row instead. Cross-checked
+    not a reference-value problem) on: SDPLIB none; DIMACS none.
+
+    This list used to hold nb_L2, nql30old and qssp30old. All three are
+    now fixed and carry DIMACS_PARAMS rows of their own, by the
+    widelen.m/trydif.m/maxstep.m all-or-nothing branch fix (see
+    widelen.py's and maxstep.py's docstrings, and CONTRIBUTING.md section
+    6): upstream tests one global `all(tmp > 0)` across every Lorentz
+    block at once, so a single block whose discriminant lands on zero
+    drops every other block onto a cruder fallback formula. That
+    discriminant is a perfect square in exact arithmetic, so this port
+    clamps per block instead, which is strictly more accurate than either
+    upstream branch. nb_L2 went from numerr=2 at iteration 10 to
+    numerr=0 at iteration 16 -- the real Octave/MEX build's own iteration
+    count -- and qssp30old from numerr=2 to numerr=1 solving to its
+    published 6.4966749, an instance the real Octave/MEX build itself
+    fails with numerr=2. nql30 was fixed earlier, by a different change.
+
+    The rest of this entry is the investigation history that led there,
+    kept because it records what was ruled out along the way.
+
+    Cross-checked
     against a from-source build of the real
     Octave/MEX SeDuMi (vendor/sedumi-upstream, `install_sedumi`) on the
-    same .mat files: qssp30old (and nql30old, same family/shape) fails
-    there too (numerr=2), confirming a genuine solver limitation on
-    those instances, not a porting bug. nb_L2 is the opposite: the real
-    Octave/MEX build solves it cleanly (numerr=0, iter=16); this port
-    still doesn't. That gap is narrowed but not yet closed -- passing
+    same .mat files: qssp30old (and nql30old, same family/shape) failed
+    there too (numerr=2), which had been read as a genuine solver
+    limitation on those instances rather than a porting bug -- true of
+    the real build, but not a reason this port had to share it. nb_L2 was
+    the opposite: the real Octave/MEX build solves it cleanly (numerr=0,
+    iter=16); this port did not. That gap was narrowed before it was
+    closed -- passing
     `stepdif=1` (skipping pars.stepdif's default "Adaptive
     Step-Differentiation" auto-switch entirely) makes this port solve
     nb_L2 cleanly too (numerr=0, iter=17), and the *default* run's own
@@ -143,18 +163,30 @@ dropped:
 
     That all-or-nothing branch is widelen.m's own design (present
     unmodified in vendor/sedumi-upstream/widelen.m), not something this
-    port introduced -- plausibly a deliberate cheap safety net against
-    handing sqrt() a negative discriminant on *any* block, applied to
-    every block at once rather than per-block. Two independent
-    same-input floating-point pipelines occasionally landing on opposite
-    sides of an exact zero in a quantity like this is expected chaotic
-    sensitivity, not a locatable off-by-one or formula error -- no line
-    in updtransfo.py/widelen.py/tdet/ddot is wrong. Left unfixed for the
-    same reason `stepdif=1` isn't forced as pars's default (see above):
-    changing the branch's numerics to dodge this one instance's
-    coin-flip would be an algorithm-level change with unclear effects on
-    every other problem that currently relies on today's exact
-    branching, not a correctness fix.
+    port introduced -- a cheap safety net against handing sqrt() a
+    negative discriminant on *any* block, applied to every block at once
+    rather than per-block. That much was read, at the time, as expected
+    chaotic sensitivity between two floating-point pipelines rather than
+    a locatable error, and the branch was left alone: changing its
+    numerics looked like an algorithm-level change made to dodge one
+    instance's coin flip.
+
+    What that reading missed is that `tmp` cannot legitimately go
+    negative at all. The two eigenvalues the formula produces are
+    `lab2q` and `detxz/lab2q`, whose product is detxz and whose sum is
+    2*halfxz, so `tmp` is identically ((lab1-lab2)/2)^2 -- a perfect
+    square. It dips below zero only by rounding when a block's two
+    eigenvalues nearly coincide, and lands on exactly 0, which `> 0`
+    also rejects, when they coincide outright. Re-instrumenting nb_L2
+    shows the latter is what actually happens: the offending entries are
+    exactly -0.0, not the sub-ULP negatives assumed here. So which
+    branch is right is not a coin flip at all -- per-block
+    `sqrt(max(tmp, 0))` reproduces upstream's fallback for the one
+    block that needs it, keeps the accurate formula everywhere else, and
+    still never hands sqrt() a negative argument. See widelen.py's
+    docstring for the fix and CONTRIBUTING.md section 6 for the wider
+    lesson; `stepdif=1` is still not forced as pars's default, and no
+    longer needs to be.
   - SDPLIB hinf12: strong duality fails for this instance (duality gap
     ~28, matches sdpt3py's own documented exclusion of the same problem).
   - DIMACS hinf12/hinf13: the README marks both "(?)" (its own
@@ -396,6 +428,14 @@ DIMACS_PARAMS = [
     # (name, class_dir, ref_obj, atol, marks)
     pytest.param("nb", "ANTENNA", -0.05070309, 0.0001014062, marks=pytest.mark.timing),
     pytest.param("nb_L1", "ANTENNA", -13.01234, 0.02602467, marks=pytest.mark.timing),
+    # nb_L2, nql30old and qssp30old were all in this file's numerr=2
+    # exclusion list until the widelen.m/trydif.m/maxstep.m all-or-nothing
+    # branch fix (see widelen.py's docstring); they now solve to their
+    # published values. nql30old/qssp30old finish at numerr=1 rather than
+    # 0 -- accepted here, as for minphase below, since the assertion this
+    # file cares about is the objective, and both agree with the published
+    # value to 5+ digits with cx and by agreeing to each other as well.
+    pytest.param("nb_L2", "ANTENNA", -1.62897198, 0.003257944, marks=pytest.mark.timing),
     pytest.param("nb_L2_bessel", "ANTENNA", -0.1025695, 0.000205139, marks=pytest.mark.timing),
     pytest.param("copo14", "COPOS", 0, 0.0001, marks=pytest.mark.mini),
     pytest.param("copo23", "COPOS", 0, 0.0001, marks=pytest.mark.extended),
@@ -404,7 +444,9 @@ DIMACS_PARAMS = [
     pytest.param("hamming_7_5_6", "HAMMING", -42.66667, 0.08533333, marks=pytest.mark.timing),
     pytest.param("hamming_9_8", "HAMMING", -224, 0.448, marks=pytest.mark.extended),
     pytest.param("nql30", "NQL", -0.9460, 0.001892, marks=pytest.mark.timing),
+    pytest.param("nql30old", "NQL", 0.9460, 0.001892, marks=pytest.mark.timing),
     pytest.param("qssp30", "QSSP", -6.496675, 0.01299335, marks=pytest.mark.timing),
+    pytest.param("qssp30old", "QSSP", 6.4966749, 0.01299335, marks=pytest.mark.timing),
     pytest.param("sched_100_100_scaled", "SCHED", 27.3307, 0.0546614, marks=pytest.mark.extended),
     pytest.param("sched_100_50_orig", "SCHED", 181889.9, 363.7798, marks=pytest.mark.extended),
     pytest.param("sched_50_50_orig", "SCHED", 26673, 53.346, marks=pytest.mark.timing),

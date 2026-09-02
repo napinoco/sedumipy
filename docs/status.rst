@@ -13,7 +13,7 @@ Phase 2      ctypes Python bindings over libsedumi.so            Done
 Phase 3      Interior-point solver logic (LP + SOCP + PSD)       Done
 Phase 4      High-level API + .mat/SDPA I/O                      Done
 Phase 5      Verification against published benchmarks           Done
-Phase 6      Packaging (wheel build validated; CI/manylinux not) Partial
+Phase 6      Packaging (Linux+macOS wheels via CI; not on PyPI)   Partial
 ============ ================================================= =========
 
 **Scope.** LP, second-order cone (SOCP, ``K.q``/``K.r``), and
@@ -30,14 +30,17 @@ rank/infeasibility diagnostic, and the DIMACS error-measures block
 ``K.ycomplex``) are also out of scope.
 
 **Packaging.** A wheel with ``libsedumi.so`` bundled builds and installs
-correctly on this project's Linux development environment (verified in
-an isolated virtualenv with no access to the source tree). Not yet
-verified: ``cibuildwheel``/manylinux builds (no Docker available in the
-environment this was developed in), macOS/Windows builds (the build
-script assumes ``gcc``; there is no Windows equivalent yet), and
-manylinux-compliant BLAS/LAPACK linking (currently dynamically linked to
-the build host's ``libblas``/``libopenblas``, which would need
-``auditwheel repair`` or static linking for real PyPI distribution).
+correctly (verified in an isolated virtualenv with no access to the
+source tree). ``cibuildwheel`` builds run in CI
+(``.github/workflows/wheels.yml``) for Linux (manylinux containers) and
+macOS (linked against the system Accelerate framework, not a
+``libblas``/Homebrew dependency); Windows is excluded on purpose, not
+just untested -- ``tools/build_libsedumi.sh`` is a bash script with no
+``cl.exe``/MSVC equivalent yet. Not yet done: publishing to PyPI, and
+manylinux-compliant BLAS bundling (currently dynamically linked to the
+manylinux container's own ``libblas``, which would need ``auditwheel
+repair`` or static linking to be redistributable outside that
+container).
 
 For the full phase-by-phase history, the porting workflow, known bugs
 found and fixed along the way, and the prioritized list of remaining

@@ -33,9 +33,9 @@ all fully ported and verified bit-for-bit against real Octave/SeDuMi
 output, including on published [SDPLIB](https://github.com/vsdp/SDPLIB)
 and [DIMACS](https://github.com/vsdp/DIMACS) benchmark problems (see
 [Benchmarks](#benchmarks) below). Dense-column preconditioning is also
-implemented. Packaging (`pip`-installable wheels) works on Linux in this
-project's own development environment, but hasn't yet been validated in
-real CI/manylinux, nor on macOS or Windows — see
+implemented. `pip`-installable wheels build for Linux (manylinux) and
+macOS via [`wheels.yml`](.github/workflows/wheels.yml)'s cibuildwheel
+job (not yet published to PyPI); Windows isn't supported yet — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full phase-by-phase status
 and known limitations.
 

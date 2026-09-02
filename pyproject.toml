@@ -59,6 +59,16 @@ test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.se
 # manylinux containers are yum/dnf-based (AlmaLinux); libsedumi.so only
 # needs BLAS (see tools/build_libsedumi.sh), not LAPACK.
 before-all = "yum install -y blas-devel || apt-get install -y libblas-dev"
+# cibuildwheel 2.x's default manylinux image is still manylinux2014;
+# recent numpy/scipy releases have dropped wheel support for it, so the
+# test-command step's `pip install` (numpy/scipy come from sedumipy's
+# own [project.dependencies], not built here) fell back to building
+# scipy from source -- which then failed for the unrelated reason that
+# this bare container has no OpenBLAS for *scipy's* build, only the
+# blas-devel/libblas-dev installed above for libsedumi.so itself.
+# manylinux_2_28 has current numpy/scipy wheels available and is still
+# yum/dnf-based, so `before-all` above needs no change.
+manylinux-x86_64-image = "manylinux_2_28"
 
 # No [tool.cibuildwheel.macos] before-all: tools/build_libsedumi.sh links
 # against the system Accelerate framework on Darwin, so nothing needs

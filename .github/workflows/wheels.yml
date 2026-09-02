@@ -50,6 +50,17 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # Without this, mingw-w64-x86_64-gcc's freshly-extracted .exe/.dll
+      # files (a compiler toolchain is hundreds of small, unsigned
+      # binaries) can end up silently removed by Windows Defender's
+      # real-time scanning before anything gets a chance to use them --
+      # confirmed in ci.yml's test-windows job: pacman's own install log
+      # said "installing mingw-w64-x86_64-gcc..." successfully, yet
+      # `C:\msys64\mingw64\bin` came back completely empty later in the
+      # very same job.
+      - name: Disable Windows Defender real-time scanning
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64

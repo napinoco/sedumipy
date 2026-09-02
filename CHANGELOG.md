@@ -40,6 +40,12 @@ full phase-by-phase status and history).
 
 - Complex Hermitian PSD problems (`K.scomplex`/`K.ycomplex`) are out of
   scope.
-- Not yet published to PyPI, and manylinux wheels are not yet
-  `auditwheel repair`'d to bundle their own BLAS (currently dynamically
-  linked against the build host's `libblas`).
+- Not yet published to PyPI.
+- The wheel jobs do run the standard repair step on every platform
+  (cibuildwheel's built-in `auditwheel repair` on Linux, which retags
+  the wheels `manylinux_2_28_x86_64`; `delvewheel repair
+  --analyze-existing` on Windows), but only the Windows wheel has been
+  confirmed to actually vendor its BLAS: `auditwheel` reported nothing
+  to graft into the Linux wheels, which has not yet been chased down.
+  Until it is, treat the Linux wheels as possibly still depending on
+  the build host's `libblas`.

@@ -2270,11 +2270,18 @@ def cone_from_dict(K: dict) -> ConeK:
 # down to the exact final size at the end -- it must therefore own a
 # buffer allocated via the C allocator family, NOT a numpy-owned buffer
 # (realloc()'ing memory numpy itself allocated would corrupt numpy's own
-# bookkeeping). _libc gives access to the process's already-linked
-# malloc/free (there is no separate libc to load on macOS/Linux -- CDLL(None)
-# resolves symbols already present in the process, which always includes
-# the C runtime).
-_libc = ctypes.CDLL(None)
+# bookkeeping), and freed with a calloc/free that shares the same heap
+# as whatever realloc() libsedumi's C code itself resolves to, or
+# free()'ing memory realloc() may have moved would corrupt the CRT's own
+# bookkeeping. On macOS/Linux, CDLL(None) resolves symbols already
+# linked into the process, which always includes the C runtime -- there
+# is no separate libc to load. Windows has no such "the process itself"
+# handle (ctypes.CDLL(None) raises TypeError there), and no single
+# universal CRT either; libsedumi.dll here is always built by MSYS2's
+# MINGW64 gcc (see tools/build_libsedumi.sh), which -- unlike UCRT64/
+# CLANG64 -- links the legacy msvcrt.dll, so loading that by name gets
+# the exact same heap its realloc() uses.
+_libc = ctypes.CDLL("msvcrt") if sys.platform == "win32" else ctypes.CDLL(None)
 _libc.calloc.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
 _libc.calloc.restype = ctypes.c_void_p
 _libc.free.argtypes = [ctypes.c_void_p]

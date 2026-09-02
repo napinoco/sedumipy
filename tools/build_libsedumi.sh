@@ -151,13 +151,16 @@ case "$kernel" in
     # approximate count of defined text symbols instead, diagnostic only.
     # `$gcc_bin_dir` was resolved above, next to the gcc that built $out.
     "$gcc_bin_dir/nm.exe" "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions (approx.)"
-    # Print $out's actual DLL import table: delvewheel (wheels.yml's
-    # Windows repair step) reported "no external dependencies are
-    # needed" for a build of this exact library, which would be wrong if
-    # -lopenblas really produced a dynamic import on libopenblas.dll (as
-    # expected -- MSYS2's mingw-w64-x86_64-openblas ships only the
-    # shared-library form) -- this makes that verifiable from the log
-    # instead of assumed.
+    # $out's actual DLL import table -- libopenblas.dll and the mingw
+    # runtime DLLs should appear here, since -lopenblas links against
+    # MSYS2's libopenblas.dll.a *import* library (the package ships no
+    # static archive). That is what pyproject.toml's delvewheel
+    # `--analyze-existing` has to vendor in for a redistributable wheel;
+    # without that flag delvewheel silently bundled nothing and claimed
+    # "no external dependencies are needed", which this makes checkable
+    # rather than assumed. Note `pip` swallows this script's output
+    # unless the build fails, so it's visible on a direct invocation
+    # (see CONTRIBUTING.md's Windows note), not in a pip install log.
     "$gcc_bin_dir/objdump.exe" -p "$out" 2>/dev/null | grep -i "DLL Name" || true
     ;;
   *)

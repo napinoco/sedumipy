@@ -31,6 +31,20 @@ for f in *.c; do
 done
 
 echo "Building $out from ${#sources[@]} source files (SEDUMI_STANDALONE, no mex.h)..."
+
+# symfct.c (a forked f2c-style translation) declares several functions
+# the old K&R way: an `extern int foo();` forward declaration with empty
+# parens, meaning "unspecified arguments" in C17 and earlier, followed by
+# a real definition that takes arguments. C23 redefines empty parens to
+# mean "zero arguments" (matching "(void)"), which turns that into a
+# hard prototype mismatch -- and GCC 14+ defaults to -std=gnu23. This
+# hit MSYS2's gcc 16 on Windows first (MSYS2 packages track upstream gcc
+# closely), but would eventually hit any platform's gcc/clang once its
+# default catches up. -std=gnu17 pins the pre-C23 semantics this code
+# was written against, rather than rewriting decades-old, numerically
+# load-bearing C for a language-standard technicality.
+std_flag=-std=gnu17
+
 kernel="$(uname -s)"
 case "$kernel" in
   Darwin)
@@ -40,7 +54,7 @@ case "$kernel" in
     # requiring Homebrew. `cc` (not `gcc`, which on macOS is usually just
     # a clang alias anyway) for the same reason -- no assumption of a
     # real GNU toolchain.
-    cc -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" \
+    cc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" \
       -framework Accelerate -lm
     ;;
   MINGW*|MSYS*)
@@ -56,11 +70,11 @@ case "$kernel" in
     # `libopenblas.dll` itself (and the mingw runtime DLLs) are not
     # statically linked here -- see setup.py's Windows note on
     # `delvewheel` bundling them into the wheel instead.
-    gcc -DSEDUMI_STANDALONE -O2 -Wall -shared -I. "${sources[@]}" -o "$out" \
+    gcc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -shared -I. "${sources[@]}" -o "$out" \
       -lopenblas -lm
     ;;
   *)
-    gcc -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" -lblas -lm
+    gcc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" -lblas -lm
     ;;
 esac
 

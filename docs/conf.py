@@ -2,8 +2,9 @@
 
 Building these docs does not require a working `libsedumi.so` (autodoc
 mocks `sedumipy._native` -- see `autodoc_mock_imports` below), so `pip
-install .[docs]` alone is enough; no compiler/BLAS/LAPACK toolchain or
-`git submodule update` is needed just to build the docs.
+install -r docs/requirements.txt` alone is enough; no compiler/
+BLAS/LAPACK toolchain or `git submodule update` is needed just to build
+the docs. Published to GitHub Pages by .github/workflows/docs.yml.
 """
 
 from __future__ import annotations

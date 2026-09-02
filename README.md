@@ -37,7 +37,11 @@ and known limitations.
 ## Documentation
 
 Full documentation (installation, the problem/solver API, and the
-internals reference) is built with Sphinx from [`docs/`](docs/):
+internals reference) is published at
+**[napinoco.github.io/sedumipy](https://napinoco.github.io/sedumipy/)**
+(built with Sphinx from [`docs/`](docs/), auto-published to GitHub Pages
+by [`.github/workflows/docs.yml`](.github/workflows/docs.yml) on every
+push to `main`). To build it locally instead:
 
 ```sh
 pip install -r docs/requirements.txt

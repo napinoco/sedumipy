@@ -45,3 +45,17 @@ needs:
 ``pip install -e .[docs]`` also works if you already have a full dev
 install (:doc:`installation`), and additionally makes the ``docs`` extra
 available for other tooling that expects it.
+
+Docs are published to GitHub Pages automatically on every push to
+``main`` that touches ``docs/``, ``src/sedumipy/``, or
+``pyproject.toml`` (see ``.github/workflows/docs.yml``); there's no
+manual publish step.
+
+A handful of ported docstrings use ``*``/``'`` in ways that read as
+unterminated RST emphasis to docutils (e.g. a bare apostrophe in
+"A*x=b"-style math or a MATLAB-style ``K.q`` cross-reference). These
+show up as harmless ``WARNING: Inline emphasis/strong start-string
+without end-string`` lines during the build; the docs build (both
+locally and in CI) does not use ``-W``, so they don't fail it. Fixing a
+docstring's RST escaping is welcome but optional -- don't reflow a
+carefully-written docstring's wording just to silence one.

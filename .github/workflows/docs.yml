@@ -1,0 +1,56 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "src/sedumipy/**"
+      - "pyproject.toml"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Deliberately not `pip install .[docs]`: that would trigger
+      # setup.py's libsedumi.so build step, which needs a C compiler and
+      # BLAS/LAPACK dev headers this job doesn't have. docs/conf.py puts
+      # src/ on sys.path directly and mocks sedumipy._native, so only
+      # the docs' own dependencies are needed to build the docs.
+      - run: pip install -r docs/requirements.txt
+      # No -W: several ported docstrings use `*`/`'` in ways that read as
+      # unterminated RST emphasis (see docs/contributing.rst's note on
+      # this) -- cosmetic docutils warnings, not build failures.
+      - run: sphinx-build -b html docs docs/_build/html
+      # GitHub Pages runs Jekyll by default, which ignores
+      # underscore-prefixed paths (_static/, _sources/) that Sphinx's
+      # output depends on.
+      - run: touch docs/_build/html/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

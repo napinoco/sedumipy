@@ -44,6 +44,18 @@ pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
 での動作確認はこのセッションではできていない(このリポジトリの開発は
 Linux上で行われている)ため、CIでの実行結果が実質的な検証です。
 
+`tools/build_libsedumi.sh`のWindows分岐は`gcc`をPATH経由でもMSYS2の
+`/mingw64`という疑似パス経由でもなく、`C:\msys64\mingw64\bin\gcc.exe`
+という**Windowsスタイルの絶対パス**で直接呼びます(`MSYS2_ROOT`環境変数で
+上書き可能)。理由は2つ実機CIで確認済み: (1) GitHub Actions
+Windowsランナーには無関係な別のMinGWツールチェーンが`C:\mingw64`に
+プリインストールされており、素の`gcc`呼び出しはそちらを拾ってしまう
+(`-lopenblas`が無くリンクに失敗する)。(2) MSYS2自体の`/mingw64`という
+POSIX風マウントも、対話的/ログインシェルでない素の`bash script.sh`
+呼び出しでは解決されない(実際にCI上で`mingw-w64-x86_64-gcc`を直前に
+インストール済みの状態でも`/mingw64/bin/gcc.exe: No such file or
+directory`になることを確認済み)。
+
 ## 1. プロジェクトのゴール
 
 SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` ファイル

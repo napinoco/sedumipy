@@ -1,7 +1,45 @@
 """Port of widelen.m: computes an approximate wide-region neighborhood
 step length via a bounded bisection line search, doing the extensive
 search only when it pays off (final rate at most twice the best
-possible, step length at least half the best possible)."""
+possible, step length at least half the best possible).
+
+KNOWN UPSTREAM BUG NOT REPLICATED: widelen.m computes the Lorentz-block
+eigenvalue term as
+
+    tmp = halfxz.^2 - detxz;
+    if all(tmp > 0)          % <- one global test for ALL blocks at once
+        lab2q = halfxz + sqrt(tmp);
+    else
+        lab2q = halfxz;      % <- ...so ONE bad block degrades EVERY block
+    end
+
+`tmp` is not an arbitrary quantity that may legitimately go negative: the
+two Lorentz eigenvalues this produces are `lab2q` and `detxz/lab2q`, whose
+product is `detxz` and whose sum is `2*halfxz`, so `lab2q = halfxz +
+sqrt(tmp)` means exactly `tmp = ((lab1-lab2)/2)^2` -- a perfect square,
+hence >= 0 in exact arithmetic, dipping below zero only by rounding when
+a block's two eigenvalues nearly coincide (and hitting *exactly* 0, which
+`> 0` also rejects, whenever they coincide outright -- routine for
+structured problems whose Lorentz blocks are copies of one another).
+Upstream's `else` branch is a cheap safety net against handing sqrt() a
+negative argument, but it is applied all-or-nothing: a single block
+sitting on top of zero silently switches every other block onto the cruder
+`lab2q = halfxz` formula too. This port instead clamps per block:
+
+    lab2q = halfxz + sqrt(max(tmp, 0))
+
+which is what upstream's own formula reduces to when `tmp <= 0` for that
+one block (`sqrt(0) == 0`), keeps the accurate formula for every block
+whose own discriminant is fine, and can never hand sqrt() a negative
+argument -- i.e. it is strictly more accurate than either upstream branch
+while preserving the safety property the `if` was there for.
+
+Measured effect (DIMACS): nb_L2 goes from numerr=2 at iteration 10 to
+numerr=0 at iteration 16, matching both the real Octave/MEX build's own
+iteration count and the published objective -1.628972; qssp30old, which
+the real build itself fails on with numerr=2, improves to numerr=1 with
+cx and by agreeing to 7 digits. See CONTRIBUTING.md section 6.
+"""
 
 from __future__ import annotations
 
@@ -28,10 +66,7 @@ def _build_w(xM, zM, K: dict):
             + _native.ddot(xM[i2 - 1 : i3 - 1], zM, K["qblkstart"])
         ) / 2
         tmp = halfxz**2 - detxz
-        if np.all(tmp > 0):
-            lab2q = halfxz + np.sqrt(tmp)
-        else:
-            lab2q = halfxz
+        lab2q = halfxz + np.sqrt(np.maximum(tmp, 0.0))
 
     w["ux"], _ = psdfactor(xM, K)
     w["s"] = psdscale(w["ux"], zM, K)

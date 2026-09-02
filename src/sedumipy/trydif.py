@@ -1,6 +1,15 @@
 """Port of trydif.m: builds w=D(x)z's spectral values at a trial point
 and checks its wide-neighborhood membership, falling back to the
-previous (t=0) point if it isn't close enough."""
+previous (t=0) point if it isn't close enough.
+
+KNOWN UPSTREAM BUG NOT REPLICATED: trydif.m carries a verbatim copy of
+widelen.m's `if all(tmp > 0)` Lorentz-eigenvalue branch, and so carries
+the same defect -- one block whose discriminant lands on (or just below)
+zero silently switches *every* block onto the cruder `lab2q = halfxz`
+formula. `tmp` is a perfect square in exact arithmetic, so this port
+clamps per block (`sqrt(max(tmp, 0))`) exactly as widelen.py does; see
+that module's docstring for the full derivation and the measured effect.
+"""
 
 from __future__ import annotations
 
@@ -32,10 +41,7 @@ def trydif(t, wrIN: dict, wIN: dict, x, z, pars: dict, K: dict):
             + _native.ddot(x[i2 - 1 : i3 - 1], z, K["qblkstart"])
         ) / 2
         tmp = halfxz**2 - detxz
-        if np.all(tmp > 0):
-            lab2q = halfxz + np.sqrt(tmp)
-        else:
-            lab2q = halfxz
+        lab2q = halfxz + np.sqrt(np.maximum(tmp, 0.0))
 
     w["ux"], _ = psdfactor(x, K)
     w["s"] = psdscale(w["ux"], z, K)

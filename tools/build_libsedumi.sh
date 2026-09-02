@@ -102,14 +102,33 @@ case "$kernel" in
       fi
     done
     if [ -z "$gcc_bin" ]; then
-      gcc_bin="$(command -v gcc 2>/dev/null || true)"
+      # Every candidate location missed -- print what's actually there
+      # unconditionally (not just on total failure): a PATH-based `gcc`
+      # match below can silently be the *wrong* gcc (GitHub Actions'
+      # Windows runners ship an unrelated MinGW toolchain preinstalled
+      # at C:\mingw64, with no openblas -- see the comment above), so
+      # this is the only chance to see the real state of disk.
+      echo "WARNING: none of these MSYS2 gcc candidates matched:" >&2
+      echo "  ${gcc_candidates[*]}" >&2
+      echo "  MSYS2_ROOT=${MSYS2_ROOT:-<unset>}  msys_root=$msys_root" >&2
+      echo "  ls -la \"$msys_root\":" >&2
+      ls -la "$msys_root" >&2 2>&1 || echo "  (that listing itself failed -- msys_root doesn't exist)" >&2
+      echo "  ls -la \"$msys_root/mingw64/bin\" (if present):" >&2
+      ls -la "$msys_root/mingw64/bin" >&2 2>&1 || echo "  (that listing itself failed)" >&2
+      echo "  PATH=$PATH" >&2
+      # Fall back to PATH, but reject a match under the known-wrong
+      # C:\mingw64 (case-insensitively, since bash paths here can come
+      # back as either C:\mingw64 or /c/mingw64) rather than silently
+      # building with a toolchain that has no -lopenblas.
+      path_gcc="$(command -v gcc 2>/dev/null || true)"
+      case "${path_gcc,,}" in
+        *msys64*) gcc_bin="$path_gcc" ;;
+        "") ;;
+        *) echo "  PATH's gcc ($path_gcc) looks like the wrong (non-MSYS2) toolchain -- rejecting it." >&2 ;;
+      esac
     fi
     if [ -z "$gcc_bin" ]; then
-      echo "ERROR: could not locate MSYS2's mingw-w64-x86_64-gcc under any" >&2
-      echo "of these forms: ${gcc_candidates[*]}, nor via PATH. Diagnostics:" >&2
-      echo "  MSYS2_ROOT=${MSYS2_ROOT:-<unset>}  msys_root=$msys_root  PATH=$PATH" >&2
-      echo "  ls -la \"$msys_root/mingw64/bin\":" >&2
-      ls -la "$msys_root/mingw64/bin" >&2 2>&1 || echo "  (that directory listing itself failed)" >&2
+      echo "ERROR: could not locate MSYS2's mingw-w64-x86_64-gcc anywhere usable (see diagnostics above)." >&2
       exit 1
     fi
     echo "Using gcc: $gcc_bin"

@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -79,12 +80,25 @@ def _ensure_built() -> Path:
         )
     # tools/build_libsedumi.sh is a bash script; Windows has no shebang
     # support, so it needs `bash` (an MSYS2 MinGW64 shell -- see
-    # CONTRIBUTING.md's Windows note) invoked explicitly.
-    command = (
-        ["bash", str(build_script), str(_LIB_PATH)]
-        if sys.platform == "win32"
-        else [str(build_script), str(_LIB_PATH)]
-    )
+    # CONTRIBUTING.md's Windows note) invoked explicitly -- and by its
+    # full path, not the bare name "bash": subprocess.run() on Windows
+    # goes through CreateProcess(), which searches the System32
+    # directory *before* PATH, and every Windows install since 10
+    # 1607 ships a `bash.exe` stub there that just prints "Windows
+    # Subsystem for Linux has no installed distributions" and exits
+    # nonzero -- it would silently shadow MSYS2's real bash.exe even
+    # with MSYS2 correctly first on PATH.
+    if sys.platform == "win32":
+        bash = shutil.which("bash")
+        if bash is None:
+            raise RuntimeError(
+                "libsedumi needs to be built but no `bash` was found on "
+                "PATH (expected an MSYS2 MinGW64 install -- see "
+                "CONTRIBUTING.md's Windows note)."
+            )
+        command = [bash, str(build_script), str(_LIB_PATH)]
+    else:
+        command = [str(build_script), str(_LIB_PATH)]
     subprocess.run(command, check=True, cwd=_REPO_ROOT)
     if not _LIB_PATH.exists():
         raise RuntimeError(f"build_libsedumi.sh ran but did not produce {_LIB_PATH}")

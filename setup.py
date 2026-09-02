@@ -16,19 +16,45 @@ extension module, so it doesn't go through the usual Extension build
 path or get a platform/ABI-tagged filename).
 
 Windows: tools/build_libsedumi.sh is a bash script, so it's invoked via
-`bash` explicitly rather than executed directly (Windows has no shebang
-support). This assumes an MSYS2 MinGW64 environment on PATH (`bash`,
-`gcc`, and `mingw-w64-x86_64-openblas` -- see CONTRIBUTING.md's Windows
-note); the resulting libsedumi.dll dynamically depends on
-libopenblas.dll and a couple of mingw runtime DLLs that are not on a
-plain end-user's Windows install, so a wheel built here is not yet
-redistributable as-is -- .github/workflows/wheels.yml's Windows job runs
-`delvewheel repair` as a post-build step to bundle them into the wheel.
+`bash`'s full path explicitly rather than executed directly (Windows has
+no shebang support, and passing the bare name "bash" is not enough --
+see build_bash_command()'s own docstring for why). This assumes an
+MSYS2 MinGW64 environment on PATH (`bash`, `gcc`, and
+`mingw-w64-x86_64-openblas` -- see CONTRIBUTING.md's Windows note); the
+resulting libsedumi.dll dynamically depends on libopenblas.dll and a
+couple of mingw runtime DLLs that are not on a plain end-user's Windows
+install, so a wheel built here is not yet redistributable as-is --
+.github/workflows/wheels.yml's Windows job runs `delvewheel repair` as a
+post-build step to bundle them into the wheel.
 """
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+
+def build_bash_command(build_script: Path, out_path: Path) -> list[str]:
+    """Non-Windows: run build_script directly (it's executable, with a
+    #!/usr/bin/env bash shebang). Windows has no shebang support, so it
+    needs `bash` invoked explicitly -- and by its *full path*, not the
+    bare name "bash": subprocess.run() on Windows goes through
+    CreateProcess(), which searches the System32 directory *before*
+    PATH, and every Windows install since 10 1607 ships a `bash.exe`
+    stub there that just prints "Windows Subsystem for Linux has no
+    installed distributions" and exits nonzero -- it would silently
+    shadow MSYS2's real bash.exe even with MSYS2 correctly first on
+    PATH."""
+    if sys.platform != "win32":
+        return [str(build_script), str(out_path)]
+    bash = shutil.which("bash")
+    if bash is None:
+        raise RuntimeError(
+            "libsedumi.dll needs to be built but no `bash` was found on "
+            "PATH (expected an MSYS2 MinGW64 install -- see "
+            "CONTRIBUTING.md's Windows note)."
+        )
+    return [bash, str(build_script), str(out_path)]
 
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
@@ -51,11 +77,7 @@ class BuildLibsedumi(build_ext):
         out_path = (Path(self.build_lib) / "sedumipy" / LIB_NAME).resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         build_script = REPO_ROOT / "tools" / "build_libsedumi.sh"
-        command = (
-            ["bash", str(build_script), str(out_path)]
-            if sys.platform == "win32"
-            else [str(build_script), str(out_path)]
-        )
+        command = build_bash_command(build_script, out_path)
         subprocess.run(command, check=True, cwd=REPO_ROOT)
 
     def get_ext_filename(self, fullname):

@@ -45,15 +45,14 @@ markers = [
 where = ["src"]
 include = ["sedumipy*"]
 
-# Verified in .github/workflows/wheels.yml (Linux manylinux via
-# cibuildwheel's own containers, and macOS -- both run for real on
-# GitHub Actions). Windows is excluded on purpose, not just untested:
-# tools/build_libsedumi.sh is a bash script invoked via subprocess.run()
-# from setup.py's BuildLibsedumi step, and there is no cl.exe/MSVC
-# equivalent of it yet (see CONTRIBUTING.md's Phase 6 note).
+# Verified in .github/workflows/wheels.yml -- Linux (manylinux, via
+# cibuildwheel's own containers), macOS (Accelerate framework), and
+# Windows (MSYS2 MinGW64 + OpenBLAS, repaired with delvewheel) all build
+# for real on GitHub Actions. win_arm64 stays skipped: MSYS2's
+# mingw-w64-x86_64-openblas package is x86_64-only.
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"
-skip = "*-musllinux_* *_i686 *-win32 *-win_amd64 *-win_arm64"
+skip = "*-musllinux_* *_i686 *-win32 *-win_arm64"
 test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0\""
 
 [tool.cibuildwheel.linux]
@@ -64,3 +63,16 @@ before-all = "yum install -y blas-devel || apt-get install -y libblas-dev"
 # No [tool.cibuildwheel.macos] before-all: tools/build_libsedumi.sh links
 # against the system Accelerate framework on Darwin, so nothing needs
 # installing there.
+
+[tool.cibuildwheel.windows]
+# .github/workflows/wheels.yml's Windows job installs MSYS2 (bash, gcc,
+# openblas) and puts it on PATH before cibuildwheel runs, so
+# setup.py's `bash tools/build_libsedumi.sh` step (see setup.py's own
+# Windows note) can find them. The built libsedumi.dll dynamically
+# depends on libopenblas.dll and mingw's runtime DLLs, none of which are
+# on a plain end user's machine, so `delvewheel repair` bundles them
+# into the wheel -- the same role auditwheel/delocate play on
+# Linux/macOS, just not one of cibuildwheel's own built-in defaults for
+# Windows.
+before-build = "pip install delvewheel"
+repair-wheel-command = "delvewheel repair --add-path C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin -w {dest_dir} {wheel}"

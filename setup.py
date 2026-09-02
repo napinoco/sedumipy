@@ -15,8 +15,15 @@ plain ctypes-loaded shared library, not a `PyInit_*`-exporting Python
 extension module, so it doesn't go through the usual Extension build
 path or get a platform/ABI-tagged filename).
 
-Windows is not yet supported here (tools/build_libsedumi.sh assumes gcc);
-see CONTRIBUTING.md's Phase 6 note.
+Windows: tools/build_libsedumi.sh is a bash script, so it's invoked via
+`bash` explicitly rather than executed directly (Windows has no shebang
+support). This assumes an MSYS2 MinGW64 environment on PATH (`bash`,
+`gcc`, and `mingw-w64-x86_64-openblas` -- see CONTRIBUTING.md's Windows
+note); the resulting libsedumi.dll dynamically depends on
+libopenblas.dll and a couple of mingw runtime DLLs that are not on a
+plain end-user's Windows install, so a wheel built here is not yet
+redistributable as-is -- .github/workflows/wheels.yml's Windows job runs
+`delvewheel repair` as a post-build step to bundle them into the wheel.
 """
 
 import subprocess
@@ -27,7 +34,12 @@ from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
 REPO_ROOT = Path(__file__).resolve().parent
-LIB_NAME = "libsedumi.dylib" if sys.platform == "darwin" else "libsedumi.so"
+if sys.platform == "darwin":
+    LIB_NAME = "libsedumi.dylib"
+elif sys.platform == "win32":
+    LIB_NAME = "libsedumi.dll"
+else:
+    LIB_NAME = "libsedumi.so"
 
 
 class BuildLibsedumi(build_ext):
@@ -38,11 +50,13 @@ class BuildLibsedumi(build_ext):
 
         out_path = (Path(self.build_lib) / "sedumipy" / LIB_NAME).resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [str(REPO_ROOT / "tools" / "build_libsedumi.sh"), str(out_path)],
-            check=True,
-            cwd=REPO_ROOT,
+        build_script = REPO_ROOT / "tools" / "build_libsedumi.sh"
+        command = (
+            ["bash", str(build_script), str(out_path)]
+            if sys.platform == "win32"
+            else [str(build_script), str(out_path)]
         )
+        subprocess.run(command, check=True, cwd=REPO_ROOT)
 
     def get_ext_filename(self, fullname):
         if fullname == "sedumipy._libsedumi_placeholder":

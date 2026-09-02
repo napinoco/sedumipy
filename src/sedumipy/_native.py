@@ -53,15 +53,19 @@ matches blksdp.h's, the memory layout matches what the C side expects.
 from __future__ import annotations
 
 import ctypes
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 _PKG_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _PKG_DIR.parent.parent
-_LIB_PATH = _PKG_DIR / (
-    "libsedumi.dylib" if sys.platform == "darwin" else "libsedumi.so"
-)
+if sys.platform == "darwin":
+    _LIB_PATH = _PKG_DIR / "libsedumi.dylib"
+elif sys.platform == "win32":
+    _LIB_PATH = _PKG_DIR / "libsedumi.dll"
+else:
+    _LIB_PATH = _PKG_DIR / "libsedumi.so"
 
 
 def _ensure_built() -> Path:
@@ -73,13 +77,34 @@ def _ensure_built() -> Path:
             f"{_LIB_PATH} not found and {build_script} is missing; "
             "cannot build libsedumi automatically."
         )
-    subprocess.run([str(build_script), str(_LIB_PATH)], check=True, cwd=_REPO_ROOT)
+    # tools/build_libsedumi.sh is a bash script; Windows has no shebang
+    # support, so it needs `bash` (an MSYS2 MinGW64 shell -- see
+    # CONTRIBUTING.md's Windows note) invoked explicitly.
+    command = (
+        ["bash", str(build_script), str(_LIB_PATH)]
+        if sys.platform == "win32"
+        else [str(build_script), str(_LIB_PATH)]
+    )
+    subprocess.run(command, check=True, cwd=_REPO_ROOT)
     if not _LIB_PATH.exists():
         raise RuntimeError(f"build_libsedumi.sh ran but did not produce {_LIB_PATH}")
     return _LIB_PATH
 
 
-_lib = ctypes.CDLL(str(_ensure_built()))
+_built_lib_path = _ensure_built()
+
+if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+    # libsedumi.dll dynamically depends on libopenblas.dll (and a couple
+    # of mingw runtime DLLs); Python 3.8+ no longer searches PATH/cwd for
+    # a loaded DLL's own dependencies by default (PEP considerations
+    # around DLL hijacking), so a directory holding them has to be added
+    # explicitly. In a dev/MSYS2 environment those live on PATH already
+    # (harmless to also add); in a wheel built by
+    # .github/workflows/wheels.yml, `delvewheel repair` bundles them
+    # alongside libsedumi.dll in this same package directory.
+    os.add_dll_directory(str(_PKG_DIR))
+
+_lib = ctypes.CDLL(str(_built_lib_path))
 
 c_size_t_p = ctypes.POINTER(ctypes.c_size_t)
 c_double_p = ctypes.POINTER(ctypes.c_double)

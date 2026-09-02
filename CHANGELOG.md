@@ -24,15 +24,20 @@ full phase-by-phase status and history).
 - Sphinx documentation (`docs/`), published to GitHub Pages.
 - CI (`.github/workflows/ci.yml`): the test suite (Octave-generated
   oracle fixtures, no Octave needed to run it) plus the fastest SDPLIB/
-  DIMACS benchmark subset, both on every push/PR.
+  DIMACS benchmark subset, both on every push/PR, on Linux and Windows.
 - Wheel builds via cibuildwheel (`.github/workflows/wheels.yml`) for
-  Linux (manylinux) and macOS; not yet published to PyPI.
+  Linux (manylinux), macOS, and Windows (MSYS2/MinGW toolchain,
+  `delvewheel`-repaired); not yet published to PyPI.
+- Windows support: `tools/build_libsedumi.sh` now builds
+  `libsedumi.dll` via an MSYS2 MinGW64 toolchain
+  (`mingw-w64-x86_64-gcc`/`-openblas`) instead of requiring MSVC --
+  `libsedumi.dll` is a plain ctypes-loaded DLL, not a CPython extension,
+  so it doesn't need to match whatever compiler built Python itself.
+  Exercised in CI on GitHub Actions' hosted Windows runner; not yet
+  hand-verified on a real Windows machine.
 
 ### Known limitations
 
-- Windows is not supported: `tools/build_libsedumi.sh` (which compiles
-  `libsedumi.so`) is a bash/gcc script with no `cl.exe`/MSVC equivalent
-  yet.
 - Complex Hermitian PSD problems (`K.scomplex`/`K.ycomplex`) are out of
   scope.
 - Not yet published to PyPI, and manylinux wheels are not yet

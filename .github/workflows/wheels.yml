@@ -2,11 +2,11 @@ name: wheels
 
 # Builds and (optionally) tests-installs wheels via cibuildwheel -- see
 # pyproject.toml's [tool.cibuildwheel] for the actual build/test config.
-# Linux runs manylinux containers (real Docker) and macOS runs on a real
-# Mac, both provided by GitHub Actions -- this is the actual
+# Linux runs manylinux containers (real Docker), macOS runs on a real
+# Mac, and Windows runs on a real Windows box with MSYS2 installed below
+# -- all three provided by GitHub Actions. This is the actual
 # verification CONTRIBUTING.md's Phase 6 note flagged as not yet done in
-# earlier development (no Docker/macOS available there). Windows is
-# excluded on purpose (see pyproject.toml's cibuildwheel comment).
+# earlier development (no Docker/macOS/Windows available there).
 
 on:
   push:
@@ -46,6 +46,30 @@ jobs:
           name: wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
 
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+      # cibuildwheel spawns its own subprocesses (pip, setup.py, ...)
+      # outside of an MSYS2 shell, so bash/gcc/openblas need to be on the
+      # regular Windows PATH, not just the `shell: msys2 {0}` steps the
+      # action above sets up for.
+      - name: Put MSYS2 on PATH
+        shell: bash
+        run: |
+          echo "C:\msys64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
+      - uses: pypa/cibuildwheel@v2.21
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-latest
+          path: wheelhouse/*.whl
+
   sdist:
     runs-on: ubuntu-latest
     steps:
@@ -62,7 +86,7 @@ jobs:
 
   publish-to-release:
     if: github.event_name == 'release'
-    needs: [build, sdist]
+    needs: [build, build-windows, sdist]
     runs-on: ubuntu-latest
     permissions:
       contents: write

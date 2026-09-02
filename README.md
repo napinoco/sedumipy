@@ -33,9 +33,11 @@ all fully ported and verified bit-for-bit against real Octave/SeDuMi
 output, including on published [SDPLIB](https://github.com/vsdp/SDPLIB)
 and [DIMACS](https://github.com/vsdp/DIMACS) benchmark problems (see
 [Benchmarks](#benchmarks) below). Dense-column preconditioning is also
-implemented. `pip`-installable wheels build for Linux (manylinux) and
-macOS via [`wheels.yml`](.github/workflows/wheels.yml)'s cibuildwheel
-job (not yet published to PyPI); Windows isn't supported yet — see
+implemented. `pip`-installable wheels build for Linux (manylinux), macOS,
+and Windows via [`wheels.yml`](.github/workflows/wheels.yml)'s
+cibuildwheel job (not yet published to PyPI; the Windows build uses an
+MSYS2/MinGW toolchain and has only been exercised on GitHub Actions'
+hosted runner, not hand-verified on a real Windows machine) — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full phase-by-phase status
 and known limitations.
 
@@ -87,9 +89,13 @@ If you already cloned without `--recurse-submodules`, run
 development package (e.g. `apt install build-essential libblas-dev` on
 Debian/Ubuntu, or nothing extra at all on macOS — it links against the
 system Accelerate framework there); it's then built automatically the
-first time `sedumipy` is imported, via `tools/build_libsedumi.sh`. The
-Octave submodule is only needed to regenerate oracle/golden-reference
-data, not to run the existing test suite.
+first time `sedumipy` is imported, via `tools/build_libsedumi.sh`. On
+Windows, install [MSYS2](https://www.msys2.org/) and its
+`mingw-w64-x86_64-gcc`/`mingw-w64-x86_64-openblas` packages first — see
+the Windows note in [`docs/installation.rst`](docs/installation.rst) or
+[`CONTRIBUTING.md`](CONTRIBUTING.md). The Octave submodule is only
+needed to regenerate oracle/golden-reference data, not to run the
+existing test suite.
 
 ## Benchmarks
 

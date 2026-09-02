@@ -5,12 +5,21 @@ Requirements
 ------------
 
 * Python >= 3.10
-* A C compiler and BLAS, to build ``libsedumi.so``/``.dylib`` (the
-  compiled kernel library) the first time ``sedumipy`` is imported: on
-  Linux, ``gcc`` plus a BLAS development package (e.g. ``apt install
-  build-essential libblas-dev``); on macOS, nothing extra -- it links
-  against the system Accelerate framework. Windows is not yet supported
-  -- see :doc:`status`.
+* A C compiler and BLAS, to build ``libsedumi.so``/``.dylib``/``.dll``
+  (the compiled kernel library) the first time ``sedumipy`` is imported:
+
+  * **Linux**: ``gcc`` plus a BLAS development package (e.g. ``apt
+    install build-essential libblas-dev``).
+  * **macOS**: nothing extra -- links against the system Accelerate
+    framework.
+  * **Windows**: `MSYS2 <https://www.msys2.org/>`_ with the MINGW64
+    ``mingw-w64-x86_64-gcc`` and ``mingw-w64-x86_64-openblas`` packages
+    installed (``pacman -S ...``), with ``C:\msys64\mingw64\bin`` and
+    ``C:\msys64\usr\bin`` on ``PATH``. Not MSVC -- ``libsedumi.dll`` is
+    a plain ctypes-loaded DLL, not a CPython extension, so it doesn't
+    need to match whatever compiler built Python itself. This path is
+    exercised in CI (see :doc:`status`) but has not been hand-verified
+    on a real Windows machine.
 
 From source
 -----------
@@ -31,10 +40,11 @@ implementation this project ports from, kept for reference
 (``vendor/sedumi-upstream/``). Neither submodule is required just to
 ``import sedumipy`` and solve a problem.
 
-``libsedumi.so`` is built automatically the first time ``sedumipy`` is
-imported (via ``tools/build_libsedumi.sh``); no separate build step is
-needed. This compiled library is not committed to the repository (see
-``.gitignore``), so a fresh checkout always builds its own.
+The compiled kernel library is built automatically the first time
+``sedumipy`` is imported (via ``tools/build_libsedumi.sh``, invoked
+through ``bash`` on Windows); no separate build step is needed. It is
+not committed to the repository (see ``.gitignore``), so a fresh
+checkout always builds its own.
 
 Verifying the install
 ----------------------

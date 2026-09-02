@@ -32,6 +32,30 @@ jobs:
       - run: pip install -e .[test]
       - run: python -m pytest tests/ -q
 
+  test-windows:
+    # Separate from the `test` matrix above: needs MSYS2 (bash/gcc/
+    # openblas) on PATH first so `pip install -e .[test]` can build
+    # libsedumi.dll -- see setup.py's and tools/build_libsedumi.sh's
+    # Windows notes.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+      - name: Put MSYS2 on PATH
+        shell: bash
+        run: |
+          echo "C:\msys64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
+      - run: pip install -e .[test]
+      - run: python -m pytest tests/ -q
+
   benchmarks-mini:
     # Separate job: needs the SDPLIB/DIMACS submodules (real published
     # problems + their official optimal values), which the fast `test`

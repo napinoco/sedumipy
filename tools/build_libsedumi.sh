@@ -80,19 +80,42 @@ case "$kernel" in
     # setup.py/_native.py's notes), just a second, unrelated toolchain
     # this time instead of WSL's bash.exe stub.
     #
-    # Also deliberately NOT MSYS2's own /mingw64 POSIX mount: confirmed
-    # that doesn't resolve either for a plain non-interactive, non-login
-    # bash invocation like this one, even with mingw-w64-x86_64-gcc
-    # freshly installed moments earlier by the very same CI job ("No
-    # such file or directory" -- MSYS2 evidently wires that mount up via
-    # a profile script that only runs for interactive/login shells, not
-    # unconditionally). A plain Windows-style path sidesteps MSYS2's
-    # path-mount setup entirely; MSYS2_ROOT overrides the default
-    # location (matching what .github/workflows/*.yml's own MSYS2 setup
-    # steps assume) for a non-default install.
+    # Also deliberately NOT MSYS2's own /mingw64 POSIX mount, and NOT
+    # just a single hardcoded Windows-style path either: two prior
+    # versions of this each seemed reasonable and each still failed with
+    # "No such file or directory" in real CI, despite mingw-w64-x86_64-
+    # gcc having just been installed successfully by the very same job.
+    # Rather than guess a fourth time, try every plausible form and, if
+    # every single one fails, dump enough diagnostics to actually see
+    # what's on disk instead of failing silently.
     msys_root="${MSYS2_ROOT:-C:/msys64}"
-    "$msys_root/mingw64/bin/gcc.exe" "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -shared -I. "${sources[@]}" -o "$out" \
-      -L"$msys_root/mingw64/lib" -lopenblas -lm
+    gcc_candidates=(
+      "$msys_root/mingw64/bin/gcc.exe"
+      "/mingw64/bin/gcc.exe"
+      "$(cygpath -u "$msys_root" 2>/dev/null || true)/mingw64/bin/gcc.exe"
+    )
+    gcc_bin=""
+    for candidate in "${gcc_candidates[@]}"; do
+      if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        gcc_bin="$candidate"
+        break
+      fi
+    done
+    if [ -z "$gcc_bin" ]; then
+      gcc_bin="$(command -v gcc 2>/dev/null || true)"
+    fi
+    if [ -z "$gcc_bin" ]; then
+      echo "ERROR: could not locate MSYS2's mingw-w64-x86_64-gcc under any" >&2
+      echo "of these forms: ${gcc_candidates[*]}, nor via PATH. Diagnostics:" >&2
+      echo "  MSYS2_ROOT=${MSYS2_ROOT:-<unset>}  msys_root=$msys_root  PATH=$PATH" >&2
+      echo "  ls -la \"$msys_root/mingw64/bin\":" >&2
+      ls -la "$msys_root/mingw64/bin" >&2 2>&1 || echo "  (that directory listing itself failed)" >&2
+      exit 1
+    fi
+    echo "Using gcc: $gcc_bin"
+    gcc_bin_dir="$(dirname "$gcc_bin")"
+    "$gcc_bin" "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -shared -I. "${sources[@]}" -o "$out" \
+      -L"$gcc_bin_dir/../lib" -lopenblas -lm
     ;;
   *)
     gcc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" -lblas -lm
@@ -107,7 +130,8 @@ case "$kernel" in
   MINGW*|MSYS*)
     # PE/COFF has no ELF-style .dynsym for `nm -D` to read; this is an
     # approximate count of defined text symbols instead, diagnostic only.
-    "$msys_root/mingw64/bin/nm.exe" "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions (approx.)"
+    # `$gcc_bin_dir` was resolved above, next to the gcc that built $out.
+    "$gcc_bin_dir/nm.exe" "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions (approx.)"
     ;;
   *)
     nm -D "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions"

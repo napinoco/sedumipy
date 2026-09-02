@@ -13,6 +13,16 @@
 の submodule、フォーク時点のコミットに固定)に参照用として残っており、
 オラクル再生成(Octave実機での比較用データ生成)はこのsubmoduleを使います。
 
+**開発環境の前提条件:** `pip install -e .[test]` は初回importで
+`libsedumi.so` をビルドするため(`_native.py`の`_ensure_built()`)、
+Cコンパイラ(`gcc`)とBLAS開発ヘッダー(Debian/Ubuntuなら
+`apt install build-essential libblas-dev`)が事前に入っている必要が
+あります(`tools/build_libsedumi.sh`参照。LAPACKは実際には未使用 --
+`-lblas`のみでリンクしています)。素のコンテナ/CI環境ではこれが
+入っておらず`-lblas: not found`でビルドが失敗することがあるので、
+新しい環境で最初にハマったらまずここを疑ってください。
+(`.github/workflows/ci.yml`がこの手順を毎回実行して確認しています。)
+
 ## 1. プロジェクトのゴール
 
 SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` ファイル

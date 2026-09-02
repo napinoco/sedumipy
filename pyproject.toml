@@ -45,17 +45,22 @@ markers = [
 where = ["src"]
 include = ["sedumipy*"]
 
-# Phase 6: not yet run in real CI in this environment (no Docker daemon
-# available to invoke cibuildwheel's manylinux containers here) -- this
-# is a starting configuration, validated only indirectly via `python -m
-# build --wheel` on this same Linux host (see CONTRIBUTING.md's Phase 6
-# note for what that did and didn't confirm). Only Linux is listed;
-# macOS/Windows builds need setup.py's BuildLibsedumi step ported off
-# tools/build_libsedumi.sh's gcc-only, Linux/macOS-`.so`/`.dylib`-only
-# assumptions first (Windows especially -- there is no build_libsedumi.sh
-# equivalent for cl.exe yet).
+# Verified in .github/workflows/wheels.yml (Linux manylinux via
+# cibuildwheel's own containers, and macOS -- both run for real on
+# GitHub Actions). Windows is excluded on purpose, not just untested:
+# tools/build_libsedumi.sh is a bash script invoked via subprocess.run()
+# from setup.py's BuildLibsedumi step, and there is no cl.exe/MSVC
+# equivalent of it yet (see CONTRIBUTING.md's Phase 6 note).
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"
-skip = "*-musllinux_* *_i686 *-win32"
-before-all = "yum install -y blas-devel lapack-devel || apt-get install -y libblas-dev liblapack-dev"
+skip = "*-musllinux_* *_i686 *-win32 *-win_amd64 *-win_arm64"
 test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0\""
+
+[tool.cibuildwheel.linux]
+# manylinux containers are yum/dnf-based (AlmaLinux); libsedumi.so only
+# needs BLAS (see tools/build_libsedumi.sh), not LAPACK.
+before-all = "yum install -y blas-devel || apt-get install -y libblas-dev"
+
+# No [tool.cibuildwheel.macos] before-all: tools/build_libsedumi.sh links
+# against the system Accelerate framework on Darwin, so nothing needs
+# installing there.

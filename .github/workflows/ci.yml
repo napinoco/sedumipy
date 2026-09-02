@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # No submodules checked out here on purpose: the committed
+    # tests/fixtures/*.mat oracle data is enough to run the real test
+    # suite (see CONTRIBUTING.md section 8) without Octave or the
+    # vendor/examples submodules. Tests that do need a submodule
+    # (test_matio.py's gzip case, test_golden_end_to_end.py) skip
+    # themselves via pytest.mark.skipif when it's absent.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: sudo apt-get update && sudo apt-get install -y libblas-dev
+      - run: pip install -e .[test]
+      - run: python -m pytest tests/ -q
+
+  benchmarks-mini:
+    # Separate job: needs the SDPLIB/DIMACS submodules (real published
+    # problems + their official optimal values), which the fast `test`
+    # job above deliberately skips checking out. `-m mini` keeps this to
+    # the fastest ~46-problem subset (~35s solve time) -- see README.md's
+    # Benchmarks section for the full/slower marks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y libblas-dev
+      - run: pip install -e .[test]
+      - run: python -m pytest tests/test_benchmarks.py -v -m mini

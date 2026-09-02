@@ -1,0 +1,76 @@
+name: wheels
+
+# Builds and (optionally) tests-installs wheels via cibuildwheel -- see
+# pyproject.toml's [tool.cibuildwheel] for the actual build/test config.
+# Linux runs manylinux containers (real Docker) and macOS runs on a real
+# Mac, both provided by GitHub Actions -- this is the actual
+# verification CONTRIBUTING.md's Phase 6 note flagged as not yet done in
+# earlier development (no Docker/macOS available there). Windows is
+# excluded on purpose (see pyproject.toml's cibuildwheel comment).
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "csrc/**"
+      - "src/**"
+      - "tools/build_libsedumi.sh"
+      - "setup.py"
+      - "pyproject.toml"
+      - ".github/workflows/wheels.yml"
+  pull_request:
+    paths:
+      - "csrc/**"
+      - "src/**"
+      - "tools/build_libsedumi.sh"
+      - "setup.py"
+      - "pyproject.toml"
+      - ".github/workflows/wheels.yml"
+  workflow_dispatch: {}
+  release:
+    types: [published]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pypa/cibuildwheel@v2.21
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build --sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish-to-release:
+    if: github.event_name == 'release'
+    needs: [build, sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

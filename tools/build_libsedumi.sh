@@ -31,7 +31,17 @@ for f in *.c; do
 done
 
 echo "Building $out from ${#sources[@]} source files (SEDUMI_STANDALONE, no mex.h)..."
-gcc -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" -lblas -lm
+if [ "$(uname)" = "Darwin" ]; then
+  # macOS ships no `libblas`/`-lblas` by default and has no system package
+  # manager to install one; every Mac does ship Accelerate.framework
+  # (BLAS/LAPACK), so link against that instead of requiring Homebrew.
+  # `cc` (not `gcc`, which on macOS is usually just a clang alias anyway)
+  # for the same reason -- no assumption of a real GNU toolchain.
+  cc -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" \
+    -framework Accelerate -lm
+else
+  gcc -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" -lblas -lm
+fi
 
 echo "OK: $out"
 if [ "$(uname)" = "Darwin" ]; then

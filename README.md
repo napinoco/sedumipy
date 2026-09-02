@@ -1,5 +1,10 @@
 # sedumipy
 
+[![ci](https://github.com/napinoco/sedumipy/actions/workflows/ci.yml/badge.svg)](https://github.com/napinoco/sedumipy/actions/workflows/ci.yml)
+[![wheels](https://github.com/napinoco/sedumipy/actions/workflows/wheels.yml/badge.svg)](https://github.com/napinoco/sedumipy/actions/workflows/wheels.yml)
+[![docs](https://github.com/napinoco/sedumipy/actions/workflows/docs.yml/badge.svg)](https://napinoco.github.io/sedumipy/)
+[![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)](LICENSE)
+
 **A MATLAB/Octave-free Python port of [SeDuMi](https://github.com/sqlp/sedumi)** —
 an interior-point solver for linear (LP), second-order cone (SOCP), and
 semidefinite (SDP) programs — as a standalone C kernel library plus a
@@ -78,9 +83,10 @@ python -m venv .venv
 
 If you already cloned without `--recurse-submodules`, run
 `git submodule update --init --recursive` first. Building `libsedumi.so`
-(the compiled C kernel library) requires a C compiler and BLAS/LAPACK
-development headers (e.g. `apt install build-essential libblas-dev
-liblapack-dev` on Debian/Ubuntu); it's then built automatically the
+(the compiled C kernel library) requires a C compiler and a BLAS
+development package (e.g. `apt install build-essential libblas-dev` on
+Debian/Ubuntu, or nothing extra at all on macOS — it links against the
+system Accelerate framework there); it's then built automatically the
 first time `sedumipy` is imported, via `tools/build_libsedumi.sh`. The
 Octave submodule is only needed to regenerate oracle/golden-reference
 data, not to run the existing test suite.

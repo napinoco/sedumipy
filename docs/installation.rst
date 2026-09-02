@@ -5,10 +5,12 @@ Requirements
 ------------
 
 * Python >= 3.10
-* A C compiler (``gcc`` on Linux/macOS) and BLAS/LAPACK development
-  headers, to build ``libsedumi.so``/``.dylib`` (the compiled kernel
-  library) the first time ``sedumipy`` is imported. Windows is not yet
-  supported -- see :doc:`status`.
+* A C compiler and BLAS, to build ``libsedumi.so``/``.dylib`` (the
+  compiled kernel library) the first time ``sedumipy`` is imported: on
+  Linux, ``gcc`` plus a BLAS development package (e.g. ``apt install
+  build-essential libblas-dev``); on macOS, nothing extra -- it links
+  against the system Accelerate framework. Windows is not yet supported
+  -- see :doc:`status`.
 
 From source
 -----------

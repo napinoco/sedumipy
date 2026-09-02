@@ -1,0 +1,23 @@
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+  jobs:
+    install:
+      # Deliberately NOT `pip install .[docs]`: sedumipy's build backend
+      # (setup.py's BuildLibsedumi step) always compiles libsedumi.so at
+      # install time, which needs gcc plus BLAS/LAPACK dev headers not
+      # present on the default image. docs/conf.py instead puts src/ on
+      # sys.path directly and mocks the sedumipy._native import, so only
+      # the docs' own dependencies need installing here.
+      - pip install -r docs/requirements.txt
+
+sphinx:
+  configuration: docs/conf.py
+
+# Not needed for the docs themselves (see docs/conf.py) -- skip the
+# vendor/examples submodule checkouts entirely.
+submodules:
+  include: []

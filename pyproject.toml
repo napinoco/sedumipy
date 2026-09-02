@@ -6,15 +6,33 @@ build-backend = "setuptools.build_meta"
 name = "sedumipy"
 version = "0.0.1.dev0"
 description = "MATLAB/Octave-free port of SeDuMi (work in progress)"
+readme = "README.md"
 license = { text = "GPL-2.0-only" }
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[project.urls]
+Homepage = "https://github.com/napinoco/sedumipy"
+Repository = "https://github.com/napinoco/sedumipy"
+Issues = "https://github.com/napinoco/sedumipy/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+docs = ["sphinx>=7.0", "furo", "myst-parser"]
 
 [tool.pytest.ini_options]
 markers = [

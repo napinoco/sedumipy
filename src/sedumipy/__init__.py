@@ -10,7 +10,23 @@ sedumi.py's own docstring for the exact scope (LP + second-order-cone +
 PSD cones) and CONTRIBUTING.md for the full project status.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from . import _native  # noqa: F401
 from .matio import read_mat, write_solution_mat  # noqa: F401
 from .sdpa import read_sdpa, write_sdpa  # noqa: F401
 from .sedumi import sedumi  # noqa: F401
+
+try:
+    __version__ = version("sedumipy")
+except PackageNotFoundError:  # not installed (e.g. run from a raw checkout)
+    __version__ = "0.0.0+unknown"
+
+__all__ = [
+    "sedumi",
+    "read_mat",
+    "write_solution_mat",
+    "read_sdpa",
+    "write_sdpa",
+    "__version__",
+]

@@ -43,20 +43,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Without this, mingw-w64-x86_64-gcc's freshly-extracted .exe/.dll
-      # files (a compiler toolchain is hundreds of small, unsigned
-      # binaries) can end up silently removed some time after being
-      # written -- confirmed: a `shell: msys2 {0}` verify step placed
-      # right after setup-msys2's install finds gcc.exe present and
-      # working (near-instant, `gcc --version` succeeds), yet the same
-      # path is gone by the time `pip install`'s build_ext step reaches
-      # it ~20s later (spent downloading numpy/scipy), after only a
-      # plain `Set-MpPreference -DisableRealtimeMonitoring $true`.
-      # Strengthen it: also disable behavior monitoring/IOAV/script
-      # scanning, add an explicit folder exclusion (belt-and-suspenders
-      # in case real-time disable alone doesn't stick), and print
-      # Get-MpComputerStatus back so a future run's log actually shows
-      # whether any of this took effect.
+      # mingw-w64-x86_64-gcc's freshly-extracted .exe/.dll files (a
+      # compiler toolchain is hundreds of small, unsigned binaries) have
+      # been observed silently removed from C:\msys64\mingw64 some time
+      # after being written, before `pip install`'s build_ext step gets
+      # to use them. Disabling every Defender knob that plausibly applies
+      # is cheap and left in as belt-and-suspenders, but it did NOT stop
+      # the disappearance on its own (confirmed via Get-MpComputerStatus
+      # readback below) -- see the "Verify MSYS2 gcc/openblas, then copy
+      # it out of C:\msys64" step further down for the actual workaround.
       - name: Disable Windows Defender scanning of C:\msys64
         shell: pwsh
         run: |
@@ -65,9 +60,11 @@ jobs:
           Set-MpPreference -DisableBlockAtFirstSeen $true
           Set-MpPreference -DisableIOAVProtection $true
           Set-MpPreference -DisableScriptScanning $true
+          Set-MpPreference -PUAProtection Disabled
           Add-MpPreference -ExclusionPath 'C:\msys64'
+          Add-MpPreference -ExclusionPath 'C:\toolchain-mingw64'
           Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled, AMServiceEnabled
-          Get-MpPreference | Select-Object DisableRealtimeMonitoring, ExclusionPath
+          Get-MpPreference | Select-Object DisableRealtimeMonitoring, ExclusionPath, PUAProtection
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -80,7 +77,22 @@ jobs:
       # and force a real reinstall if not (a corrupted package cache
       # entry is a live possibility too: every run so far has hit the
       # same cache key and reported "Cache unchanged, skipping save").
-      - name: Verify (or force-reinstall) MSYS2 gcc/openblas
+      #
+      # Confirmed over many runs: gcc.exe/libopenblas are present and
+      # working right here, yet C:\msys64\mingw64\bin ends up empty by
+      # the time pip's build_ext step reaches it (in one run, less than
+      # half a second after this same check -- ruling out a slow async
+      # scan). Disabling Defender's real-time protection (above) did NOT
+      # stop it, and Get-MpComputerStatus confirmed real-time protection
+      # really was off, so root cause is still unconfirmed. Rather than
+      # keep guessing at Defender knobs, sidestep it: copy the verified
+      # toolchain out of C:\msys64 to an unrelated path immediately, in
+      # this same step (no time gap for whatever it is to act), and point
+      # everything downstream (PATH, build_libsedumi.sh's MSYS2_ROOT
+      # candidate, delvewheel's --add-path in pyproject.toml) at the copy
+      # instead. If C:\msys64 specifically is what's targeted, this
+      # avoids it regardless of what the actual cause turns out to be.
+      - name: Verify MSYS2 gcc/openblas, then copy it out of C:\msys64
         shell: msys2 {0}
         run: |
           if [ ! -x /mingw64/bin/gcc.exe ] || [ ! -f /mingw64/lib/libopenblas.dll.a ]; then
@@ -90,23 +102,38 @@ jobs:
           fi
           ls -la /mingw64/bin/gcc.exe /mingw64/lib/libopenblas.dll.a
           /mingw64/bin/gcc.exe --version
+          mkdir -p /c/toolchain-mingw64
+          cp -r /mingw64 /c/toolchain-mingw64/mingw64
+          ls -la /c/toolchain-mingw64/mingw64/bin/gcc.exe
+          /c/toolchain-mingw64/mingw64/bin/gcc.exe --version
+          echo "MSYS2_ROOT=C:/toolchain-mingw64" >> "$GITHUB_ENV"
       - name: Put MSYS2 on PATH
         shell: bash
         run: |
-          echo "C:\msys64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "C:\toolchain-mingw64\mingw64\bin" >> "$GITHUB_PATH"
           echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
-      # Pinpointing diagnostic: the previous verify step (right after
-      # setup-msys2) found gcc.exe present, but pip's build_ext step
-      # ~20s later (after downloading numpy/scipy) did not. This checks
-      # whether it's already gone *before* pip even starts, or vanishes
-      # during pip's own run.
+      # Pinpointing diagnostic: checks both the original C:\msys64 copy
+      # and the C:\toolchain-mingw64 copy immediately before pip install.
+      # If the copy is also gone, this pulls Defender's own detection
+      # history and event log to see conclusively whether Defender is
+      # even involved (real-time protection measured off above, so it
+      # may not be) rather than guessing at more Defender settings.
       - name: Check gcc.exe right before pip install
         shell: pwsh
         run: |
-          if (Test-Path 'C:\msys64\mingw64\bin\gcc.exe') {
-            Write-Host "gcc.exe present immediately before pip install"
-          } else {
-            Write-Host "::warning::gcc.exe ALREADY MISSING before pip install even starts"
+          $orig = Test-Path 'C:\msys64\mingw64\bin\gcc.exe'
+          $copy = Test-Path 'C:\toolchain-mingw64\mingw64\bin\gcc.exe'
+          Write-Host "original C:\msys64 gcc.exe present: $orig"
+          Write-Host "copied C:\toolchain-mingw64 gcc.exe present: $copy"
+          if (-not $copy) {
+            Write-Host "::warning::copied gcc.exe missing too -- not a C:\msys64-specific cause"
+            Write-Host "--- Get-MpThreatDetection ---"
+            Get-MpThreatDetection | Format-List * | Out-String | Write-Host
+            Write-Host "--- Get-MpThreat ---"
+            Get-MpThreat | Format-List * | Out-String | Write-Host
+            Write-Host "--- Recent Windows Defender operational log ---"
+            Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -MaxEvents 30 -ErrorAction SilentlyContinue |
+              Format-Table TimeCreated, Id, LevelDisplayName, Message -Wrap -AutoSize | Out-String -Width 300 | Write-Host
           }
       - run: pip install -e .[test]
       - run: python -m pytest tests/ -q

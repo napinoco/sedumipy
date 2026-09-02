@@ -69,7 +69,9 @@ jobs:
           Set-MpPreference -DisableBlockAtFirstSeen $true
           Set-MpPreference -DisableIOAVProtection $true
           Set-MpPreference -DisableScriptScanning $true
+          Set-MpPreference -PUAProtection Disabled
           Add-MpPreference -ExclusionPath 'C:\msys64'
+          Add-MpPreference -ExclusionPath 'C:\toolchain-mingw64'
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -80,7 +82,18 @@ jobs:
       # invocations elsewhere, which have had their own PATH/mount
       # surprises) -- use it to verify directly and force a real
       # reinstall if anything is missing.
-      - name: Verify (or force-reinstall) MSYS2 gcc/openblas
+      #
+      # Confirmed in ci.yml's test-windows job over many runs: gcc.exe/
+      # libopenblas are present and working right here, yet
+      # C:\msys64\mingw64\bin ends up empty by the time pip's build_ext
+      # step reaches it, even with Defender's real-time protection
+      # measured off. Root cause still unconfirmed -- sidestep it instead
+      # of continuing to guess at Defender settings: copy the verified
+      # toolchain out of C:\msys64 to an unrelated path immediately, in
+      # this same step, and point everything downstream (PATH,
+      # build_libsedumi.sh's MSYS2_ROOT candidate, delvewheel's
+      # --add-path in pyproject.toml) at the copy instead.
+      - name: Verify MSYS2 gcc/openblas, then copy it out of C:\msys64
         shell: msys2 {0}
         run: |
           if [ ! -x /mingw64/bin/gcc.exe ] || [ ! -f /mingw64/lib/libopenblas.dll.a ]; then
@@ -90,6 +103,11 @@ jobs:
           fi
           ls -la /mingw64/bin/gcc.exe /mingw64/lib/libopenblas.dll.a
           /mingw64/bin/gcc.exe --version
+          mkdir -p /c/toolchain-mingw64
+          cp -r /mingw64 /c/toolchain-mingw64/mingw64
+          ls -la /c/toolchain-mingw64/mingw64/bin/gcc.exe
+          /c/toolchain-mingw64/mingw64/bin/gcc.exe --version
+          echo "MSYS2_ROOT=C:/toolchain-mingw64" >> "$GITHUB_ENV"
       # cibuildwheel spawns its own subprocesses (pip, setup.py, ...)
       # outside of an MSYS2 shell, so bash/gcc/openblas need to be on the
       # regular Windows PATH, not just the `shell: msys2 {0}` steps the
@@ -97,7 +115,7 @@ jobs:
       - name: Put MSYS2 on PATH
         shell: bash
         run: |
-          echo "C:\msys64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "C:\toolchain-mingw64\mingw64\bin" >> "$GITHUB_PATH"
           echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
       - uses: pypa/cibuildwheel@v2.21
       - uses: actions/upload-artifact@v4

@@ -59,6 +59,27 @@ jobs:
           msystem: MINGW64
           update: true
           install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+      # Disabling Defender didn't fix it either: mingw64/bin still came
+      # back completely empty afterward. The setup-msys2 action's own
+      # package cache (same cache key across every run so far, always
+      # reporting "Cache unchanged, skipping save") is the remaining
+      # suspect -- pacman's local DB can end up saying a package is
+      # installed without its files actually having been restored/
+      # extracted. `shell: msys2 {0}` is the action's own supported way
+      # to run commands inside the environment (unlike our raw `bash`
+      # invocations elsewhere, which have had their own PATH/mount
+      # surprises) -- use it to verify directly and force a real
+      # reinstall if anything is missing.
+      - name: Verify (or force-reinstall) MSYS2 gcc/openblas
+        shell: msys2 {0}
+        run: |
+          if [ ! -x /mingw64/bin/gcc.exe ] || [ ! -f /mingw64/lib/libopenblas.dll.a ]; then
+            echo "gcc.exe/libopenblas missing after setup-msys2's install -- forcing a real reinstall"
+            pacman -Rns --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas 2>&1 || true
+            pacman -S --noconfirm --needed --overwrite '*' mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+          fi
+          ls -la /mingw64/bin/gcc.exe /mingw64/lib/libopenblas.dll.a
+          /mingw64/bin/gcc.exe --version
       - name: Put MSYS2 on PATH
         shell: bash
         run: |

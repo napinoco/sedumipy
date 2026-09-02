@@ -45,31 +45,41 @@ jobs:
           python-version: "3.12"
       # Without this, mingw-w64-x86_64-gcc's freshly-extracted .exe/.dll
       # files (a compiler toolchain is hundreds of small, unsigned
-      # binaries) can end up silently removed by Windows Defender's
-      # real-time scanning before anything gets a chance to use them --
-      # confirmed: pacman's own install log said "installing
-      # mingw-w64-x86_64-gcc..." successfully, yet `C:\msys64\mingw64\bin`
-      # came back completely empty (`ls -la` showed only `.`/`..`) later
-      # in the very same job.
-      - name: Disable Windows Defender real-time scanning
+      # binaries) can end up silently removed some time after being
+      # written -- confirmed: a `shell: msys2 {0}` verify step placed
+      # right after setup-msys2's install finds gcc.exe present and
+      # working (near-instant, `gcc --version` succeeds), yet the same
+      # path is gone by the time `pip install`'s build_ext step reaches
+      # it ~20s later (spent downloading numpy/scipy), after only a
+      # plain `Set-MpPreference -DisableRealtimeMonitoring $true`.
+      # Strengthen it: also disable behavior monitoring/IOAV/script
+      # scanning, add an explicit folder exclusion (belt-and-suspenders
+      # in case real-time disable alone doesn't stick), and print
+      # Get-MpComputerStatus back so a future run's log actually shows
+      # whether any of this took effect.
+      - name: Disable Windows Defender scanning of C:\msys64
         shell: pwsh
-        run: Set-MpPreference -DisableRealtimeMonitoring $true
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Set-MpPreference -DisableBehaviorMonitoring $true
+          Set-MpPreference -DisableBlockAtFirstSeen $true
+          Set-MpPreference -DisableIOAVProtection $true
+          Set-MpPreference -DisableScriptScanning $true
+          Add-MpPreference -ExclusionPath 'C:\msys64'
+          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled, AMServiceEnabled
+          Get-MpPreference | Select-Object DisableRealtimeMonitoring, ExclusionPath
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
           install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
-      # Disabling Defender didn't fix it either: mingw64/bin still came
-      # back completely empty afterward. The setup-msys2 action's own
-      # package cache (same cache key across every run so far, always
-      # reporting "Cache unchanged, skipping save") is the remaining
-      # suspect -- pacman's local DB can end up saying a package is
-      # installed without its files actually having been restored/
-      # extracted. `shell: msys2 {0}` is the action's own supported way
-      # to run commands inside the environment (unlike our raw `bash`
+      # `shell: msys2 {0}` is the action's own supported way to run
+      # commands inside the environment (unlike our raw `bash`
       # invocations elsewhere, which have had their own PATH/mount
-      # surprises) -- use it to verify directly and force a real
-      # reinstall if anything is missing.
+      # surprises) -- use it to verify gcc/openblas are actually there,
+      # and force a real reinstall if not (a corrupted package cache
+      # entry is a live possibility too: every run so far has hit the
+      # same cache key and reported "Cache unchanged, skipping save").
       - name: Verify (or force-reinstall) MSYS2 gcc/openblas
         shell: msys2 {0}
         run: |
@@ -85,6 +95,19 @@ jobs:
         run: |
           echo "C:\msys64\mingw64\bin" >> "$GITHUB_PATH"
           echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
+      # Pinpointing diagnostic: the previous verify step (right after
+      # setup-msys2) found gcc.exe present, but pip's build_ext step
+      # ~20s later (after downloading numpy/scipy) did not. This checks
+      # whether it's already gone *before* pip even starts, or vanishes
+      # during pip's own run.
+      - name: Check gcc.exe right before pip install
+        shell: pwsh
+        run: |
+          if (Test-Path 'C:\msys64\mingw64\bin\gcc.exe') {
+            Write-Host "gcc.exe present immediately before pip install"
+          } else {
+            Write-Host "::warning::gcc.exe ALREADY MISSING before pip install even starts"
+          }
       - run: pip install -e .[test]
       - run: python -m pytest tests/ -q
 

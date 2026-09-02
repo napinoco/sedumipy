@@ -52,27 +52,29 @@ jobs:
       - uses: actions/checkout@v4
       # Without this, mingw-w64-x86_64-gcc's freshly-extracted .exe/.dll
       # files (a compiler toolchain is hundreds of small, unsigned
-      # binaries) can end up silently removed by Windows Defender's
-      # real-time scanning before anything gets a chance to use them --
-      # confirmed in ci.yml's test-windows job: pacman's own install log
-      # said "installing mingw-w64-x86_64-gcc..." successfully, yet
-      # `C:\msys64\mingw64\bin` came back completely empty later in the
-      # very same job.
-      - name: Disable Windows Defender real-time scanning
+      # binaries) can end up silently removed some time after being
+      # written -- confirmed in ci.yml's test-windows job: a
+      # `shell: msys2 {0}` verify step right after setup-msys2's install
+      # finds gcc.exe present and working, yet the same path is gone by
+      # the time `pip install`'s build_ext step reaches it ~20s later,
+      # after only a plain `Set-MpPreference -DisableRealtimeMonitoring
+      # $true`. Strengthen it: also disable behavior monitoring/IOAV/
+      # script scanning and add an explicit folder exclusion (belt-and-
+      # suspenders in case real-time disable alone doesn't stick).
+      - name: Disable Windows Defender scanning of C:\msys64
         shell: pwsh
-        run: Set-MpPreference -DisableRealtimeMonitoring $true
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Set-MpPreference -DisableBehaviorMonitoring $true
+          Set-MpPreference -DisableBlockAtFirstSeen $true
+          Set-MpPreference -DisableIOAVProtection $true
+          Set-MpPreference -DisableScriptScanning $true
+          Add-MpPreference -ExclusionPath 'C:\msys64'
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
           install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
-      # Disabling Defender didn't fix it either: mingw64/bin still came
-      # back completely empty afterward (confirmed in ci.yml's
-      # test-windows job). The setup-msys2 action's own package cache
-      # (same cache key across every run so far, always reporting
-      # "Cache unchanged, skipping save") is the remaining suspect --
-      # pacman's local DB can end up saying a package is installed
-      # without its files actually having been restored/extracted.
       # `shell: msys2 {0}` is the action's own supported way to run
       # commands inside the environment (unlike our raw `bash`
       # invocations elsewhere, which have had their own PATH/mount

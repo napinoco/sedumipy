@@ -109,14 +109,28 @@ _built_lib_path = _ensure_built()
 
 if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
     # libsedumi.dll dynamically depends on libopenblas.dll (and a couple
-    # of mingw runtime DLLs); Python 3.8+ no longer searches PATH/cwd for
-    # a loaded DLL's own dependencies by default (PEP considerations
-    # around DLL hijacking), so a directory holding them has to be added
-    # explicitly. In a dev/MSYS2 environment those live on PATH already
-    # (harmless to also add); in a wheel built by
-    # .github/workflows/wheels.yml, `delvewheel repair` bundles them
-    # alongside libsedumi.dll in this same package directory.
+    # of mingw runtime DLLs). Python 3.8+ changed ctypes.CDLL()'s default
+    # search behavior on Windows to LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+    # which does NOT include the PATH environment variable -- only the
+    # loaded DLL's own directory, the application directory, System32,
+    # and directories explicitly registered via os.add_dll_directory().
+    # Confirmed the hard way: this used to just add _PKG_DIR (where a
+    # wheel's `delvewheel repair` bundles those DLLs alongside
+    # libsedumi.dll itself), on the assumption a dev/MSYS2 environment's
+    # own PATH would cover the rest -- it does not, and ctypes.CDLL()
+    # failed with "Could not find module ... or one of its dependencies"
+    # in a real dev-install CI run despite gcc/openblas being correctly
+    # on PATH. Register every existing PATH directory explicitly too, so
+    # a dev install's MSYS2 mingw64/bin (wherever it happens to be
+    # rooted -- see tools/build_libsedumi.sh's own MSYS2_ROOT note) is
+    # actually searched, not just assumed to be.
     os.add_dll_directory(str(_PKG_DIR))
+    for _path_dir in os.environ.get("PATH", "").split(os.pathsep):
+        if _path_dir and os.path.isdir(_path_dir):
+            try:
+                os.add_dll_directory(_path_dir)
+            except OSError:
+                pass
 
 _lib = ctypes.CDLL(str(_built_lib_path))
 

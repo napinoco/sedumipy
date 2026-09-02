@@ -151,6 +151,14 @@ case "$kernel" in
     # approximate count of defined text symbols instead, diagnostic only.
     # `$gcc_bin_dir` was resolved above, next to the gcc that built $out.
     "$gcc_bin_dir/nm.exe" "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions (approx.)"
+    # Print $out's actual DLL import table: delvewheel (wheels.yml's
+    # Windows repair step) reported "no external dependencies are
+    # needed" for a build of this exact library, which would be wrong if
+    # -lopenblas really produced a dynamic import on libopenblas.dll (as
+    # expected -- MSYS2's mingw-w64-x86_64-openblas ships only the
+    # shared-library form) -- this makes that verifiable from the log
+    # instead of assumed.
+    "$gcc_bin_dir/objdump.exe" -p "$out" 2>/dev/null | grep -i "DLL Name" || true
     ;;
   *)
     nm -D "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions"

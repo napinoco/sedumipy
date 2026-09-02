@@ -70,8 +70,22 @@ case "$kernel" in
     # `libopenblas.dll` itself (and the mingw runtime DLLs) are not
     # statically linked here -- see setup.py's Windows note on
     # `delvewheel` bundling them into the wheel instead.
-    gcc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -shared -I. "${sources[@]}" -o "$out" \
-      -lopenblas -lm
+    #
+    # Deliberately NOT a bare `gcc`/PATH lookup: GitHub Actions' Windows
+    # runners ship their own unrelated MinGW toolchain preinstalled at
+    # C:\mingw64 (confirmed: cibuildwheel's build picked up its gcc 15
+    # instead of MSYS2's pacman-installed gcc 16, silently, then failed
+    # to link -lopenblas since only the MSYS2 install has it) -- the same
+    # PATH-shadowing class of problem as bash's own resolution (see
+    # setup.py/_native.py's notes), just a second, unrelated toolchain
+    # this time instead of WSL's bash.exe stub. `$BASH` is bash's own
+    # full path (a bash builtin, set by bash itself to however it was
+    # actually invoked), so the MSYS2 root -- and thus its mingw64/bin --
+    # can be derived directly from it instead of trusting PATH order.
+    msys_root="$(cd "$(dirname "$BASH")/.." && pwd)"
+    mingw_bin="$msys_root/mingw64/bin"
+    "$mingw_bin/gcc.exe" "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -shared -I. "${sources[@]}" -o "$out" \
+      -L"$msys_root/mingw64/lib" -lopenblas -lm
     ;;
   *)
     gcc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" -lblas -lm
@@ -86,7 +100,8 @@ case "$kernel" in
   MINGW*|MSYS*)
     # PE/COFF has no ELF-style .dynsym for `nm -D` to read; this is an
     # approximate count of defined text symbols instead, diagnostic only.
-    nm "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions (approx.)"
+    # `$mingw_bin` was resolved above, next to the gcc that built $out.
+    "$mingw_bin/nm.exe" "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions (approx.)"
     ;;
   *)
     nm -D "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions"

@@ -47,12 +47,17 @@ include = ["sedumipy*"]
 
 # Verified in .github/workflows/wheels.yml -- Linux (manylinux, via
 # cibuildwheel's own containers), macOS, and Windows (MSYS2 MinGW64 for
-# the compiler only now) all build for real on GitHub Actions, all three
-# linking scipy-openblas64 (see tools/build_libsedumi.sh) as their BLAS
-# instead of a system/Homebrew/MSYS2 install or (on macOS) Accelerate.
-# It's a pip-installable, prebuilt ILP64 OpenBLAS with wheels for every
-# platform below, so `before-build` is the same one-line install on all
-# three rather than three different system-package recipes.
+# the compiler only now) all build for real on GitHub Actions. Linux and
+# Windows link scipy-openblas64 (see tools/build_libsedumi.sh) as their
+# BLAS instead of a system-package/MSYS2 install -- a pip-installable,
+# prebuilt ILP64 OpenBLAS, so `before-build` is a one-line install on
+# both rather than two different system-package recipes. macOS keeps
+# linking the system Accelerate framework, as before this switch: it
+# never had Linux/Windows's build/install pain (Accelerate needs no
+# install step at all), so there's nothing here for scipy-openblas64 to
+# save -- see build_libsedumi.sh's Darwin case for the full reasoning,
+# and its `[tool.cibuildwheel.macos]` section below for the resulting
+# no-op `before-build`.
 #
 # Pinned to an exact version in the `before-build` lines below, not
 # left floating: this project's own code computes the mangled BLAS symbol
@@ -77,7 +82,11 @@ include = ["sedumipy*"]
 # project's declared build requirements, invisible to `import
 # scipy_openblas64` even though it's the same Python interpreter.
 # Skipping isolation makes cibuildwheel's own venv (where before-build
-# just installed it) the one setup.py actually runs in.
+# just installed it) the one setup.py actually runs in. Applied
+# globally (including to macOS, which doesn't need it) rather than only
+# where it matters, since it's harmless when unused and keeping one
+# build-frontend setting for all three platforms is simpler than a
+# macOS-specific override that would do nothing different.
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"
 skip = "*-musllinux_* *_i686 *-win32 *-win_arm64"
@@ -100,9 +109,17 @@ manylinux-x86_64-image = "manylinux_2_28"
 # with) into the wheel the same way it already vendored -lopenblas
 # before this switch -- no extra config needed here for that part.
 
-# No [tool.cibuildwheel.macos] section needed: the global before-build/
-# build-frontend above already cover it, and no other macOS-specific
-# step remains now that Accelerate is no longer what's linked here.
+[tool.cibuildwheel.macos]
+# Overrides the global before-build to skip installing scipy-openblas64:
+# macOS links the system Accelerate framework instead (see
+# build_libsedumi.sh's Darwin case for why), so it would be installed
+# only to sit unused -- wasted download/install time on every build, and
+# a false impression from reading before-build alone that macOS uses it
+# too. "true" is a plain no-op shell command, not a typo.
+before-build = "true"
+# No repair-wheel-command override needed: delocate (cibuildwheel's
+# macOS default) has nothing to vendor here, same as before this switch
+# -- Accelerate is a system framework, not a bundled shared library.
 
 [tool.cibuildwheel.windows]
 # .github/workflows/wheels.yml's Windows job installs MSYS2 (bash, gcc)
@@ -112,9 +129,10 @@ manylinux-x86_64-image = "manylinux_2_28"
 # now supplies the BLAS (MSVC can't build this, see setup.py's
 # WINDOWS_BUILD_HELP). `delvewheel repair` bundles libscipy_openblas64_.dll
 # and the mingw runtime DLLs into the wheel, none of which are on a plain
-# end user's machine -- the same role auditwheel/delocate play on
-# Linux/macOS, just not one of cibuildwheel's own built-in defaults for
-# Windows. tools/repair_windows_wheel.py exists only because the
+# end user's machine -- the same role auditwheel plays on Linux (macOS
+# needs no such vendoring, see [tool.cibuildwheel.macos] above), just
+# not one of cibuildwheel's own built-in defaults for Windows.
+# tools/repair_windows_wheel.py exists only because the
 # scipy-openblas64 DLL's directory (a site-packages path inside this
 # venv) has to be resolved in Python at repair time, not hardcoded here.
 before-build = "pip install setuptools delvewheel scipy-openblas64==0.3.34.106.0"

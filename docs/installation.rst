@@ -9,11 +9,12 @@ compiled kernel library and the BLAS it needs are already inside it, so
 no compiler and no BLAS install are required.
 
 Wheels are published for CPython 3.10-3.13 on Linux x86_64 (manylinux),
-Windows x64, and macOS (Apple silicon). All three carry
+Windows x64, and macOS (Apple silicon). Linux and Windows carry
 `scipy-openblas64 <https://pypi.org/project/scipy-openblas64/>`_ (a
 prebuilt, ILP64 OpenBLAS build) as their BLAS, vendored into the wheel
-at build time (``auditwheel``/``delocate``/``delvewheel`` -- see
-`Requirements`_ below for what building it yourself needs).
+at build time (``auditwheel``/``delvewheel`` -- see `Requirements`_
+below for what building it yourself needs); macOS needs no vendoring at
+all, since it links the system Accelerate framework instead.
 
 Anything else -- 32-bit or ARM Windows, Alpine/musl, Linux ``aarch64``,
 Intel macOS -- has no wheel, so ``pip`` falls back to the source
@@ -42,9 +43,15 @@ because ``pip`` fell back to the source distribution as described above.
     exercised in CI (see :doc:`status`) but has not been hand-verified
     on a real Windows machine.
 
-* A BLAS, either of:
+* A BLAS:
 
-  * **Recommended, same on every OS**: ``pip install
+  * **macOS**: nothing to do -- the build always links the system
+    Accelerate framework, unconditionally. macOS never had Linux/
+    Windows's build/install problem (Accelerate needs no install step
+    at all), so there's nothing for scipy-openblas64 below to save
+    there; see ``tools/build_libsedumi.sh``'s Darwin case for the full
+    reasoning.
+  * **Linux/Windows, recommended**: ``pip install
     scipy-openblas64==0.3.34.106.0`` into the environment you're
     installing sedumipy into, *before* running ``pip install -e .`` --
     and pass ``--no-build-isolation`` to that install, since
@@ -53,21 +60,20 @@ because ``pip`` fell back to the source distribution as described above.
     comment for why) and a normal isolated build wouldn't see it
     otherwise. This is what the published wheels themselves link, so it
     exercises the exact same code path as a wheel install and needs
-    nothing beyond ``pip``, on Linux, macOS or Windows alike. Pinned to
-    an exact version deliberately -- see ``pyproject.toml``'s comment on
-    why and where else to update it if you ever bump it.
-  * **Fallback, no network access needed** (used automatically when
-    scipy-openblas64 isn't importable by the Python running the build):
-    a system BLAS per OS, exactly as before -- **Linux**: a BLAS
-    development package (e.g. ``apt install libopenblas-dev``; either
-    OpenBLAS or the reference Netlib BLAS works, OpenBLAS preferred when
-    both are present since it runs the kernels this library calls
-    roughly 3x faster). **macOS**: nothing extra -- the system
-    Accelerate framework. **Windows**: also install
-    ``mingw-w64-x86_64-openblas`` alongside the compiler above.
+    nothing beyond ``pip``. Pinned to an exact version deliberately --
+    see ``pyproject.toml``'s comment on why and where else to update it
+    if you ever bump it.
+  * **Linux/Windows, fallback, no network access needed** (used
+    automatically when scipy-openblas64 isn't importable by the Python
+    running the build): a system BLAS per OS, exactly as before --
+    **Linux**: a BLAS development package (e.g. ``apt install
+    libopenblas-dev``; either OpenBLAS or the reference Netlib BLAS
+    works, OpenBLAS preferred when both are present since it runs the
+    kernels this library calls roughly 3x faster). **Windows**: also
+    install ``mingw-w64-x86_64-openblas`` alongside the compiler above.
 
   See ``tools/build_libsedumi.sh`` for exactly how the choice between
-  the two is made.
+  scipy-openblas64 and the system-BLAS fallback is made on Linux/Windows.
 
 From source
 -----------
@@ -79,9 +85,10 @@ From source
    python -m venv .venv
    .venv/bin/pip install -e .[test]
 
-This uses whatever system BLAS you have, per `Requirements`_ above. To
-build against scipy-openblas64 instead (recommended -- see
-`Requirements`_ for why), install it first and pass
+On macOS this always links Accelerate; on Linux/Windows it uses
+whatever system BLAS you have, per `Requirements`_ above. On
+Linux/Windows, to build against scipy-openblas64 instead (recommended
+-- see `Requirements`_ for why), install it first and pass
 ``--no-build-isolation``:
 
 .. code-block:: sh

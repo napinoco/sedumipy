@@ -62,19 +62,20 @@ rank/infeasibility diagnostic, and the DIMACS error-measures block
 **Packaging.** A wheel with ``libsedumi.so`` bundled builds and installs
 correctly (verified in an isolated virtualenv with no access to the
 source tree). ``cibuildwheel`` builds run in CI
-(``.github/workflows/wheels.yml``) on all three platforms, all linking
-`scipy-openblas64 <https://pypi.org/project/scipy-openblas64/>`_ -- a
-pip-installable, prebuilt ILP64 OpenBLAS with wheels for every platform
-below, the same package numpy/scipy themselves build against -- as
-their BLAS:
+(``.github/workflows/wheels.yml``) on all three platforms. Linux and
+Windows link `scipy-openblas64
+<https://pypi.org/project/scipy-openblas64/>`_ -- a pip-installable,
+prebuilt ILP64 OpenBLAS, pinned to an exact version, the same package
+numpy/scipy themselves build against -- as their BLAS; macOS keeps
+linking the system Accelerate framework unconditionally, since it never
+had the other two's build/install problem for scipy-openblas64 to solve
+(see ``tools/build_libsedumi.sh``'s Darwin case for the full reasoning):
 
 * **Linux**: manylinux containers; ``auditwheel`` vendors the resulting
   ``libscipy_openblas64_.so`` into the wheel.
-* **macOS**: ``delocate`` vendors ``libscipy_openblas64_.dylib`` (and
-  its own libgfortran/libquadmath dependencies) into the wheel; no
-  Homebrew dependency, and no longer linked against the system
-  Accelerate framework (``tools/build_libsedumi.sh`` still falls back to
-  it for a source build where scipy-openblas64 isn't available).
+* **macOS**: no vendoring needed -- Accelerate is a system framework
+  present on every Mac, not a bundled shared library, and no Homebrew
+  dependency either.
 * **Windows**: built with an MSYS2 MinGW64 toolchain
   (``mingw-w64-x86_64-gcc``) rather than MSVC -- ``libsedumi.dll`` is a
   plain ctypes-loaded DLL, not a CPython extension, so it doesn't need

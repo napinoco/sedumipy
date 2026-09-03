@@ -29,13 +29,15 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-# Every platform is expected to bundle its BLAS now: all three link
-# scipy-openblas64 (see tools/build_libsedumi.sh), not a
-# system/framework BLAS -- unlike before this switch, when the Darwin
-# build linked Accelerate (a system framework present on every Mac, so
-# there was legitimately nothing to carry along) and this check was
-# skipped there.
+# macOS is the one platform that legitimately bundles nothing: the
+# Darwin build links Accelerate, a system framework present on every
+# Mac, so there is no BLAS to carry along (see build_libsedumi.sh's
+# Darwin case for why it stays that way even though Linux/Windows now
+# link scipy-openblas64 instead of their own system BLAS).
 expect_bundled=1
+case "$(uname -s)" in
+  Darwin) expect_bundled=0 ;;
+esac
 
 # The wheel jobs don't run actions/setup-python (cibuildwheel provisions
 # its own interpreters), so don't assume which name the runner's system

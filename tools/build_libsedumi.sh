@@ -14,12 +14,14 @@
 # Usage (from the repository root):
 #   tools/build_libsedumi.sh [output_path] [python_executable]
 #
-# BLAS: prefers scipy-openblas64 (see below) when the given Python can
-# import it, on every OS -- falling back to each OS's own system-BLAS
-# story (Accelerate on macOS, MSYS2's -lopenblas on Windows, -lblas/
-# -lopenblas on Linux) only when it can't. That fallback is what keeps a
-# plain `pip install -e .` working offline, or on a platform
-# scipy-openblas64 doesn't ship for.
+# BLAS: on Linux and Windows, prefers scipy-openblas64 (see below) when
+# the given Python can import it, falling back to that OS's own
+# system-BLAS story (MSYS2's -lopenblas on Windows, -lblas/-lopenblas on
+# Linux) only when it can't -- that fallback is what keeps a plain `pip
+# install -e .` working offline, or on a platform scipy-openblas64
+# doesn't ship for. macOS always links the system Accelerate framework
+# instead, regardless of scipy-openblas64's availability -- see the
+# Darwin case below for why.
 
 set -euo pipefail
 
@@ -55,17 +57,16 @@ std_flag=-std=gnu17
 
 # scipy-openblas64: a pip-installable, prebuilt ILP64 OpenBLAS -- the
 # same package numpy/scipy themselves build against -- with wheels for
-# Linux (x86_64/aarch64/...), macOS (x86_64/arm64) and Windows (amd64/
-# arm64). Using it means the BLAS this library links no longer has to be
-# separately installed or built per OS (no libblas-dev/libopenblas-dev,
-# no MSYS2 -lopenblas, no relying on Accelerate being present): `pip
-# install scipy-openblas64` covers every platform above with one
-# command, and gets OpenBLAS's speed everywhere Accelerate previously
-# stood in for it (macOS) too. It's a *build-time-only* dependency
-# (never installed at runtime for end users): a wheel build vendors the
-# resulting shared library into the wheel itself (auditwheel/delocate/
-# delvewheel, same as this script already relied on for -lopenblas/
-# Accelerate), exactly like numpy/scipy's own wheels do.
+# Linux (x86_64/aarch64/...) and Windows (amd64/arm64) (also macOS, but
+# see the Darwin case below for why this build doesn't use it there).
+# Using it means the BLAS this library links on Linux/Windows no longer
+# has to be separately installed or built per OS (no
+# libblas-dev/libopenblas-dev, no MSYS2 -lopenblas): `pip install
+# scipy-openblas64` covers both with one command. It's a
+# *build-time-only* dependency (never installed at runtime for end
+# users): a wheel build vendors the resulting shared library into the
+# wheel itself (auditwheel/delvewheel, same as this script already
+# relied on for -lopenblas), exactly like numpy/scipy's own wheels do.
 #
 # It ships as an ILP64 build (64-bit Fortran integers, not the 32-bit
 # LP64 int reference BLAS/OpenBLAS/Accelerate use -- see
@@ -106,30 +107,37 @@ print(libs)
 PYEOF
 }
 
+kernel="$(uname -s)"
+
+# Not even attempted on Darwin: see the Accelerate note in the Darwin
+# case below for why macOS never prefers scipy-openblas64, regardless of
+# whether python_bin can import it -- skip the subprocess (and the
+# "Using scipy-openblas64" echo, which would otherwise be actively
+# misleading there since that branch ignores these variables entirely).
 sob_cflags=""
 sob_libs=""
-if sob_flags="$(scipy_openblas64_flags 2>/dev/null)"; then
+if [ "$kernel" != "Darwin" ] && sob_flags="$(scipy_openblas64_flags 2>/dev/null)"; then
   sob_cflags="$(sed -n '1p' <<<"$sob_flags")"
   sob_libs="$(sed -n '2p' <<<"$sob_flags")"
   echo "Using scipy-openblas64 (ILP64) via $python_bin for BLAS"
 fi
 
-kernel="$(uname -s)"
 case "$kernel" in
   Darwin)
-    if [ -n "$sob_libs" ]; then
-      cc "$std_flag" -DSEDUMI_STANDALONE -DSEDUMI_BLAS_ILP64 -O2 -Wall -fPIC -shared -I. \
-        $sob_cflags "${sources[@]}" -o "$out" $sob_libs -lm
-    else
-      # macOS ships no `libblas`/`-lblas` by default and has no system
-      # package manager to install one; every Mac does ship
-      # Accelerate.framework (BLAS/LAPACK), so link against that instead
-      # of requiring Homebrew. `cc` (not `gcc`, which on macOS is usually
-      # just a clang alias anyway) for the same reason -- no assumption
-      # of a real GNU toolchain.
-      cc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" \
-        -framework Accelerate -lm
-    fi
+    # Deliberately NOT preferring scipy-openblas64 here even when it's
+    # importable, unlike every other branch below: scipy-openblas64
+    # exists to avoid the *build/install* pain Linux (system package
+    # divergence) and Windows (the whole MSYS2 story) have, and macOS
+    # never had that pain -- every Mac already ships Accelerate.framework
+    # (BLAS/LAPACK) with zero install step, so there's nothing for a pip
+    # package to save here. It would only add wheel bytes (a vendored
+    # scipy-openblas64 plus its own libgfortran/libquadmath) and risk
+    # being slower than Accelerate's own Apple Silicon tuning, for no
+    # offsetting benefit. `cc` (not `gcc`, which on macOS is usually just
+    # a clang alias anyway) for the same reason -- no assumption of a
+    # real GNU toolchain, no Homebrew dependency.
+    cc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" \
+      -framework Accelerate -lm
     ;;
   MINGW*|MSYS*)
     # Still needs an MSYS2 MinGW64 shell with mingw-w64-x86_64-gcc on

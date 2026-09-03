@@ -86,17 +86,23 @@ python -m venv .venv
 
 If you already cloned without `--recurse-submodules`, run
 `git submodule update --init --recursive` first. Building `libsedumi.so`
-(the compiled C kernel library) requires a C compiler and a BLAS
-development package (e.g. `apt install build-essential libblas-dev` on
-Debian/Ubuntu, or nothing extra at all on macOS — it links against the
-system Accelerate framework there); it's then built automatically the
-first time `sedumipy` is imported, via `tools/build_libsedumi.sh`. On
-Windows, install [MSYS2](https://www.msys2.org/) and its
-`mingw-w64-x86_64-gcc`/`mingw-w64-x86_64-openblas` packages first — see
-the Windows note in [`docs/installation.rst`](docs/installation.rst) or
-[`CONTRIBUTING.md`](CONTRIBUTING.md). The Octave submodule is only
-needed to regenerate oracle/golden-reference data, not to run the
-existing test suite.
+(the compiled C kernel library) requires a C compiler (e.g. `apt install
+build-essential` on Debian/Ubuntu, or nothing extra at all on macOS —
+Xcode's command line tools provide `cc`; on Windows, install
+[MSYS2](https://www.msys2.org/) and its `mingw-w64-x86_64-gcc` package
+first — see the Windows note in
+[`docs/installation.rst`](docs/installation.rst) or
+[`CONTRIBUTING.md`](CONTRIBUTING.md)); it's then built automatically the
+first time `sedumipy` is imported, via `tools/build_libsedumi.sh`. It
+also needs a BLAS: run `pip install scipy-openblas64` (a
+pip-installable, prebuilt BLAS with wheels for Linux/macOS/Windows —
+the same one the published wheels themselves link) before `pip install
+-e .[test] --no-build-isolation` above, or skip that and it falls back
+to a system BLAS per OS instead (e.g. `apt install libopenblas-dev` on
+Linux, or nothing extra on macOS/Accelerate) — see
+[`docs/installation.rst`](docs/installation.rst) for the full story.
+The Octave submodule is only needed to regenerate oracle/golden-
+reference data, not to run the existing test suite.
 
 ## Benchmarks
 

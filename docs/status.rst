@@ -47,8 +47,10 @@ interior-point iteration accumulates rounding. Integer-valued results
 individual kernels were confirmed bit-identical to the MEX build during
 development -- see ``CONTRIBUTING.md`` -- but that is a development
 observation, not what CI asserts: the tolerances above are what has to
-hold across the three BLAS implementations CI covers (reference Netlib and
-OpenBLAS on Linux, OpenBLAS on Windows, Accelerate on macOS).
+hold across the four BLAS implementations CI covers (reference Netlib,
+OpenBLAS, and scipy-openblas64 -- a pip-installable, prebuilt ILP64
+OpenBLAS, see below -- on Linux; OpenBLAS on Windows; Accelerate on
+macOS).
 
 **Not ported** (deliberately out of scope, no effect on the returned
 ``(x, y, info)``): the console progress printout, ``pars.vplot``'s
@@ -60,25 +62,30 @@ rank/infeasibility diagnostic, and the DIMACS error-measures block
 **Packaging.** A wheel with ``libsedumi.so`` bundled builds and installs
 correctly (verified in an isolated virtualenv with no access to the
 source tree). ``cibuildwheel`` builds run in CI
-(``.github/workflows/wheels.yml``) on all three platforms:
+(``.github/workflows/wheels.yml``) on all three platforms, all linking
+`scipy-openblas64 <https://pypi.org/project/scipy-openblas64/>`_ -- a
+pip-installable, prebuilt ILP64 OpenBLAS with wheels for every platform
+below, the same package numpy/scipy themselves build against -- as
+their BLAS:
 
-* **Linux**: manylinux containers, linked against the container's own
-  ``libblas``.
-* **macOS**: linked against the system Accelerate framework, no
-  Homebrew/external BLAS dependency.
+* **Linux**: manylinux containers; ``auditwheel`` vendors the resulting
+  ``libscipy_openblas64_.so`` into the wheel.
+* **macOS**: ``delocate`` vendors ``libscipy_openblas64_.dylib`` (and
+  its own libgfortran/libquadmath dependencies) into the wheel; no
+  Homebrew dependency, and no longer linked against the system
+  Accelerate framework (``tools/build_libsedumi.sh`` still falls back to
+  it for a source build where scipy-openblas64 isn't available).
 * **Windows**: built with an MSYS2 MinGW64 toolchain
-  (``mingw-w64-x86_64-gcc``/``-openblas``) rather than MSVC --
-  ``libsedumi.dll`` is a plain ctypes-loaded DLL, not a CPython
-  extension, so it doesn't need to be built with the same compiler as
-  Python itself. ``delvewheel repair`` bundles the resulting
-  ``libopenblas.dll``/mingw-runtime dependencies into the wheel. This
-  path has only been exercised on GitHub Actions' hosted Windows
-  runner, not hand-verified on a real Windows machine.
+  (``mingw-w64-x86_64-gcc``) rather than MSVC -- ``libsedumi.dll`` is a
+  plain ctypes-loaded DLL, not a CPython extension, so it doesn't need
+  to be built with the same compiler as Python itself.
+  ``tools/repair_windows_wheel.py`` (``delvewheel repair
+  --analyze-existing`` under the hood) bundles the resulting
+  ``libscipy_openblas64_.dll`` and mingw-runtime dependencies into the
+  wheel. This path has only been exercised on GitHub Actions' hosted
+  Windows runner, not hand-verified on a real Windows machine.
 
-Not yet done: publishing to PyPI, and manylinux-compliant BLAS bundling
-(currently dynamically linked to the manylinux container's own
-``libblas``, which would need ``auditwheel repair`` or static linking to
-be redistributable outside that container).
+Not yet done: publishing to PyPI.
 
 For the full phase-by-phase history, the porting workflow, known bugs
 found and fixed along the way, and the prioritized list of remaining

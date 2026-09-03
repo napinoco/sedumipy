@@ -27,26 +27,41 @@ full phase-by-phase status and history).
   oracle fixtures, no Octave needed to run it) plus the fastest SDPLIB/
   DIMACS benchmark subset, both on every push/PR, on Linux, macOS and
   Windows. The BLAS implementation is the axis that actually matters for
-  these numerical comparisons, so the suite runs against four of them:
-  reference Netlib and OpenBLAS on Linux, OpenBLAS on Windows, and
-  Accelerate on macOS.
+  these numerical comparisons, so the Linux job runs it against three:
+  reference Netlib and OpenBLAS (both a system package), and
+  scipy-openblas64 (pip-installed, ILP64 -- see below); Windows runs
+  OpenBLAS via MSYS2 and macOS runs Accelerate.
+- `tools/build_libsedumi.sh` links [scipy-openblas64](
+  https://pypi.org/project/scipy-openblas64/) -- a pip-installable,
+  prebuilt ILP64 OpenBLAS with wheels for Linux, macOS and Windows, the
+  same package numpy/scipy themselves build against -- as `libsedumi`'s
+  BLAS whenever it's importable by the Python building it, on every OS,
+  falling back to each OS's own system-BLAS story (`-lblas`/
+  `-lopenblas` on Linux, MSYS2's `-lopenblas` on Windows, the system
+  Accelerate framework on macOS) only when it isn't. It's a
+  build-time-only dependency -- never installed at runtime for end
+  users -- since a wheel build vendors the resulting shared library into
+  the wheel itself, same as it already did for `-lopenblas`/Accelerate.
+  See `csrc/sedumi_platform.h`'s `SEDUMI_BLAS_ILP64`/
+  `BLAS_SYMBOL_PREFIX`/`BLAS_SYMBOL_SUFFIX` for how the ILP64 integer
+  width and the symbol-mangling scipy-openblas64 needs (to coexist with
+  other OpenBLAS copies in one process) are handled.
 - Wheel builds via cibuildwheel (`.github/workflows/wheels.yml`) for
-  Linux (manylinux), macOS, and Windows (MSYS2/MinGW toolchain); not yet
-  published to PyPI. Each wheel carries whatever BLAS it needs, by a
-  different route per platform: `auditwheel` vendors `libblas`/
-  `libopenblas` into `sedumipy.libs/` on Linux, `delvewheel repair
-  --analyze-existing` vendors `libopenblas.dll` and the mingw runtime
-  DLLs on Windows, and macOS needs no vendoring at all because
-  Accelerate is a system framework. The wheel jobs print each repaired
-  wheel's bundled libraries so this stays verifiable rather than
-  assumed.
-- Windows support: `tools/build_libsedumi.sh` now builds
-  `libsedumi.dll` via an MSYS2 MinGW64 toolchain
-  (`mingw-w64-x86_64-gcc`/`-openblas`) instead of requiring MSVC --
-  `libsedumi.dll` is a plain ctypes-loaded DLL, not a CPython extension,
-  so it doesn't need to match whatever compiler built Python itself.
-  Exercised in CI on GitHub Actions' hosted Windows runner; not yet
-  hand-verified on a real Windows machine.
+  Linux (manylinux), macOS, and Windows (MSYS2/MinGW toolchain, gcc
+  only now); not yet published to PyPI. All three now link
+  scipy-openblas64 (see above) as their BLAS, vendored into the wheel by
+  `auditwheel` on Linux, `delocate` on macOS, and `delvewheel repair`
+  (via `tools/repair_windows_wheel.py`) on Windows -- one pip-installable
+  BLAS build across all three platforms instead of a different
+  system-package/framework story per OS. The wheel jobs print each
+  repaired wheel's bundled libraries so this stays verifiable rather
+  than assumed.
+- Windows support: `tools/build_libsedumi.sh` builds `libsedumi.dll` via
+  an MSYS2 MinGW64 toolchain (`mingw-w64-x86_64-gcc`) instead of
+  requiring MSVC -- `libsedumi.dll` is a plain ctypes-loaded DLL, not a
+  CPython extension, so it doesn't need to match whatever compiler built
+  Python itself. Exercised in CI on GitHub Actions' hosted Windows
+  runner; not yet hand-verified on a real Windows machine.
 
 ### Known limitations
 

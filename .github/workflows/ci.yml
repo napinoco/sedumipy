@@ -36,6 +36,12 @@ jobs:
         # FMA and therefore different rounding, which is exactly what the
         # oracle comparisons' rtol/atol have to absorb -- see the macOS
         # (Accelerate) job below.
+        #
+        # scipy-openblas64 is the pip-installable ILP64 build wheels.yml
+        # now links (see pyproject.toml's [tool.cibuildwheel] and
+        # tools/build_libsedumi.sh) instead of any of the three above --
+        # a `blas` value of "scipy-openblas64" is a sentinel the steps
+        # below special-case, not an apt package name.
         include:
           - python-version: "3.10"
             blas: libblas-dev
@@ -43,13 +49,37 @@ jobs:
             blas: libblas-dev
           - python-version: "3.13"
             blas: libopenblas-dev
+          - python-version: "3.13"
+            blas: scipy-openblas64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: sudo apt-get update && sudo apt-get install -y ${{ matrix.blas }}
-      - run: pip install -e .[test]
+      - name: Install BLAS
+        run: |
+          if [ "${{ matrix.blas }}" = "scipy-openblas64" ]; then
+            pip install scipy-openblas64
+          else
+            sudo apt-get update && sudo apt-get install -y ${{ matrix.blas }}
+          fi
+      - name: Install sedumipy
+        run: |
+          # --no-build-isolation only for the scipy-openblas64 case: it's
+          # not declared in [build-system] requires (see pyproject.toml's
+          # comment on why), so a normal isolated build wouldn't see the
+          # copy the previous step just installed -- pip's build
+          # isolation runs setup.py in a separate environment containing
+          # only this project's declared build requirements, invisible to
+          # `import scipy_openblas64` even though it's the same
+          # interpreter. The apt-installed cases need no such flag:
+          # `-lblas`/`-lopenblas` resolve via the system linker, which
+          # isolation doesn't touch.
+          if [ "${{ matrix.blas }}" = "scipy-openblas64" ]; then
+            pip install -e .[test] --no-build-isolation
+          else
+            pip install -e .[test]
+          fi
       - run: python -m pytest tests/ -q
 
   test-macos:

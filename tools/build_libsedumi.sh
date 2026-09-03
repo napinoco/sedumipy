@@ -12,13 +12,21 @@
 # this repository. Left untouched rather than guessed at.
 #
 # Usage (from the repository root):
-#   tools/build_libsedumi.sh [output_path]
+#   tools/build_libsedumi.sh [output_path] [python_executable]
+#
+# BLAS: prefers scipy-openblas64 (see below) when the given Python can
+# import it, on every OS -- falling back to each OS's own system-BLAS
+# story (Accelerate on macOS, MSYS2's -lopenblas on Windows, -lblas/
+# -lopenblas on Linux) only when it can't. That fallback is what keeps a
+# plain `pip install -e .` working offline, or on a platform
+# scipy-openblas64 doesn't ship for.
 
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 csrc_dir="$repo_root/csrc"
 out="${1:-/tmp/libsedumi.so}"
+python_bin="${2:-python3}"
 
 cd "$csrc_dir"
 
@@ -45,31 +53,96 @@ echo "Building $out from ${#sources[@]} source files (SEDUMI_STANDALONE, no mex.
 # load-bearing C for a language-standard technicality.
 std_flag=-std=gnu17
 
+# scipy-openblas64: a pip-installable, prebuilt ILP64 OpenBLAS -- the
+# same package numpy/scipy themselves build against -- with wheels for
+# Linux (x86_64/aarch64/...), macOS (x86_64/arm64) and Windows (amd64/
+# arm64). Using it means the BLAS this library links no longer has to be
+# separately installed or built per OS (no libblas-dev/libopenblas-dev,
+# no MSYS2 -lopenblas, no relying on Accelerate being present): `pip
+# install scipy-openblas64` covers every platform above with one
+# command, and gets OpenBLAS's speed everywhere Accelerate previously
+# stood in for it (macOS) too. It's a *build-time-only* dependency
+# (never installed at runtime for end users): a wheel build vendors the
+# resulting shared library into the wheel itself (auditwheel/delocate/
+# delvewheel, same as this script already relied on for -lopenblas/
+# Accelerate), exactly like numpy/scipy's own wheels do.
+#
+# It ships as an ILP64 build (64-bit Fortran integers, not the 32-bit
+# LP64 int reference BLAS/OpenBLAS/Accelerate use -- see
+# sedumi_platform.h's SEDUMI_BLAS_ILP64), and its exported symbols carry
+# an extra prefix/suffix (e.g. "dscal_" -> "scipy_dscal_64_") so several
+# independently-built OpenBLAS copies can coexist in one process without
+# clashing. Both are handled by -DSEDUMI_BLAS_ILP64 and the
+# -DBLAS_SYMBOL_PREFIX/-DBLAS_SYMBOL_SUFFIX flags below, which come
+# straight from the package's own pkg-config metadata rather than being
+# hardcoded here -- so a version bump changing either can't silently
+# desync this build from what the library actually exports.
+scipy_openblas64_flags() {
+  "$python_bin" - <<'PYEOF'
+import re
+import sys
+
+try:
+    import scipy_openblas64 as sob
+except ImportError:
+    sys.exit(1)
+
+includedir = sob.get_include_dir()
+libdir = sob.get_lib_dir()
+pkg_config = sob.get_pkg_config()
+
+
+def field(name):
+    m = re.search(rf"^{name}:[ \t]*(.*)$", pkg_config, re.MULTILINE)
+    if not m:
+        sys.exit(f"scipy_openblas64.get_pkg_config() has no {name}: line")
+    return m.group(1).strip()
+
+
+cflags = field("Cflags").replace("${includedir}", includedir)
+libs = field("Libs").replace("${libdir}", libdir)
+print(cflags)
+print(libs)
+PYEOF
+}
+
+sob_cflags=""
+sob_libs=""
+if sob_flags="$(scipy_openblas64_flags 2>/dev/null)"; then
+  sob_cflags="$(sed -n '1p' <<<"$sob_flags")"
+  sob_libs="$(sed -n '2p' <<<"$sob_flags")"
+  echo "Using scipy-openblas64 (ILP64) via $python_bin for BLAS"
+fi
+
 kernel="$(uname -s)"
 case "$kernel" in
   Darwin)
-    # macOS ships no `libblas`/`-lblas` by default and has no system
-    # package manager to install one; every Mac does ship
-    # Accelerate.framework (BLAS/LAPACK), so link against that instead of
-    # requiring Homebrew. `cc` (not `gcc`, which on macOS is usually just
-    # a clang alias anyway) for the same reason -- no assumption of a
-    # real GNU toolchain.
-    cc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" \
-      -framework Accelerate -lm
+    if [ -n "$sob_libs" ]; then
+      cc "$std_flag" -DSEDUMI_STANDALONE -DSEDUMI_BLAS_ILP64 -O2 -Wall -fPIC -shared -I. \
+        $sob_cflags "${sources[@]}" -o "$out" $sob_libs -lm
+    else
+      # macOS ships no `libblas`/`-lblas` by default and has no system
+      # package manager to install one; every Mac does ship
+      # Accelerate.framework (BLAS/LAPACK), so link against that instead
+      # of requiring Homebrew. `cc` (not `gcc`, which on macOS is usually
+      # just a clang alias anyway) for the same reason -- no assumption
+      # of a real GNU toolchain.
+      cc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" \
+        -framework Accelerate -lm
+    fi
     ;;
   MINGW*|MSYS*)
-    # Run from an MSYS2 MinGW64 shell, with mingw-w64-x86_64-gcc and
-    # mingw-w64-x86_64-openblas installed (`pacman -S`) -- see
-    # CONTRIBUTING.md's Windows note. This produces a plain PE DLL
-    # ctypes.CDLL() loads like any other shared library (libsedumi.dll is
-    # not a PyInit_*-exporting CPython extension, so it doesn't need to
-    # be built with the same compiler as Python itself). `-lopenblas`
-    # (not `-lblas`): MSYS2's BLAS/LAPACK meta-packages don't provide a
-    # plain `libblas`, but OpenBLAS exports the same FORT()-mangled
-    # symbol names (see sedumi_platform.h), so it's a drop-in swap.
-    # `libopenblas.dll` itself (and the mingw runtime DLLs) are not
-    # statically linked here -- see setup.py's Windows note on
-    # `delvewheel` bundling them into the wheel instead.
+    # Still needs an MSYS2 MinGW64 shell with mingw-w64-x86_64-gcc on
+    # PATH (`pacman -S` -- see CONTRIBUTING.md's Windows note) even when
+    # scipy-openblas64 supplies the BLAS below: MSVC can't build this
+    # (see the WINDOWS_BUILD_HELP text in setup.py), so a real gcc is
+    # needed regardless of where the BLAS comes from. This produces a
+    # plain PE DLL ctypes.CDLL() loads like any other shared library
+    # (libsedumi.dll is not a PyInit_*-exporting CPython extension, so it
+    # doesn't need to be built with the same compiler as Python itself).
+    # Neither the BLAS DLL nor the mingw runtime DLLs are statically
+    # linked here -- see setup.py's Windows note on `delvewheel` bundling
+    # them into the wheel instead.
     #
     # Deliberately NOT a bare `gcc`/PATH lookup: GitHub Actions' Windows
     # runners ship their own unrelated MinGW toolchain preinstalled at
@@ -133,30 +206,46 @@ case "$kernel" in
     fi
     echo "Using gcc: $gcc_bin"
     gcc_bin_dir="$(dirname "$gcc_bin")"
-    "$gcc_bin" "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -shared -I. "${sources[@]}" -o "$out" \
-      -L"$gcc_bin_dir/../lib" -lopenblas -lm
+    if [ -n "$sob_libs" ]; then
+      "$gcc_bin" "$std_flag" -DSEDUMI_STANDALONE -DSEDUMI_BLAS_ILP64 -O2 -Wall -shared -I. \
+        $sob_cflags "${sources[@]}" -o "$out" $sob_libs -lm
+    else
+      # `-lopenblas` (not `-lblas`): MSYS2's BLAS/LAPACK meta-packages
+      # don't provide a plain `libblas`, but OpenBLAS exports the same
+      # FORT()-mangled symbol names (see sedumi_platform.h), so it's a
+      # drop-in swap. Requires mingw-w64-x86_64-openblas installed
+      # alongside mingw-w64-x86_64-gcc.
+      "$gcc_bin" "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -shared -I. "${sources[@]}" -o "$out" \
+        -L"$gcc_bin_dir/../lib" -lopenblas -lm
+    fi
     ;;
   *)
-    # Prefer OpenBLAS over the reference Netlib implementation when both
-    # are available. They export the same FORT()-mangled symbols (see
-    # sedumi_platform.h), so it is a drop-in swap, but not a free one to
-    # skip: measured on one box, OpenBLAS runs the Level-1 kernels this
-    # library actually calls about 3x faster (ddot 0.40s -> 0.12s, daxpy
-    # 0.27s -> 0.12s), and all of them are on the hot path -- realdot
-    # alone is called from 15 files, including the triangular solves PCG
-    # repeats every iteration.
-    #
-    # Settled by an actual link test rather than by looking for files:
-    # distributions disagree about whether -lblas already resolves to
-    # OpenBLAS (Debian/Ubuntu route it through update-alternatives, so it
-    # often does; RHEL/AlmaLinux keep them separate, so it does not), and
-    # the linker is the authority on what it can actually find.
-    blas_lib=-lblas
-    if echo 'int main(void){return 0;}' | gcc -x c - -lopenblas -o /dev/null 2>/dev/null; then
-      blas_lib=-lopenblas
+    if [ -n "$sob_libs" ]; then
+      gcc "$std_flag" -DSEDUMI_STANDALONE -DSEDUMI_BLAS_ILP64 -O2 -Wall -fPIC -shared -I. \
+        $sob_cflags "${sources[@]}" -o "$out" $sob_libs -lm
+    else
+      # Prefer OpenBLAS over the reference Netlib implementation when
+      # both are available. They export the same FORT()-mangled symbols
+      # (see sedumi_platform.h), so it is a drop-in swap, but not a free
+      # one to skip: measured on one box, OpenBLAS runs the Level-1
+      # kernels this library actually calls about 3x faster (ddot 0.40s
+      # -> 0.12s, daxpy 0.27s -> 0.12s), and all of them are on the hot
+      # path -- realdot alone is called from 15 files, including the
+      # triangular solves PCG repeats every iteration.
+      #
+      # Settled by an actual link test rather than by looking for files:
+      # distributions disagree about whether -lblas already resolves to
+      # OpenBLAS (Debian/Ubuntu route it through update-alternatives, so
+      # it often does; RHEL/AlmaLinux keep them separate, so it does
+      # not), and the linker is the authority on what it can actually
+      # find.
+      blas_lib=-lblas
+      if echo 'int main(void){return 0;}' | gcc -x c - -lopenblas -o /dev/null 2>/dev/null; then
+        blas_lib=-lopenblas
+      fi
+      echo "Linking BLAS via $blas_lib"
+      gcc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" "$blas_lib" -lm
     fi
-    echo "Linking BLAS via $blas_lib"
-    gcc "$std_flag" -DSEDUMI_STANDALONE -O2 -Wall -fPIC -shared -I. "${sources[@]}" -o "$out" "$blas_lib" -lm
     ;;
 esac
 

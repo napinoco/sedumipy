@@ -29,14 +29,49 @@ typedef ptrdiff_t mwSignedIndex;
 /* Reference BLAS / OpenBLAS default to 32-bit Fortran integers (LP64,
    not ILP64) on Linux/macOS/Windows, unlike MATLAB's mwSignedIndex-sized
    blasint. Matches the FORT()-wrapped calls in sdmauxScalarmul.c,
-   sdmauxRdot.c and blkchol2.c (dcopy/dscal/daxpy/ddot/idamax). */
+   sdmauxRdot.c and blkchol2.c (dcopy/dscal/daxpy/ddot/idamax).
+
+   SEDUMI_BLAS_ILP64 switches this to a 64-bit Fortran integer instead,
+   for linking against an ILP64 BLAS build -- e.g. scipy-openblas64 (see
+   tools/build_libsedumi.sh), which ships prebuilt, pip-installable
+   OpenBLAS binaries for Linux/macOS/Windows and is preferred there over
+   requiring a system BLAS install or building one. */
+#if defined(SEDUMI_BLAS_ILP64)
+#include <stdint.h>
+typedef int64_t blasint;
+#else
 typedef int blasint;
+#endif
+
+/* scipy-openblas64 (and other co-installable OpenBLAS variants) rename
+   every exported symbol with a prefix and/or suffix, so several such
+   builds can coexist in one process without clashing -- e.g. "dscal_"
+   becomes "scipy_dscal_64_" (prefix "scipy_", suffix "64_"). The build
+   passes BLAS_SYMBOL_PREFIX/BLAS_SYMBOL_SUFFIX as bare-identifier macros
+   (matching scipy_openblas64's own pkg-config Cflags) when linking such
+   a build; default them to nothing otherwise so FORT(x) reduces to the
+   plain x_/x it always was. The double indirection through
+   SEDUMI_BLAS_CAT is required so the *values* of BLAS_SYMBOL_PREFIX/
+   BLAS_SYMBOL_SUFFIX get substituted before token-pasting, not their
+   literal names. */
+#ifndef BLAS_SYMBOL_PREFIX
+#define BLAS_SYMBOL_PREFIX
+#endif
+#ifndef BLAS_SYMBOL_SUFFIX
+#define BLAS_SYMBOL_SUFFIX
+#endif
+
+#define SEDUMI_BLAS_CAT_(a, b) a##b
+#define SEDUMI_BLAS_CAT(a, b) SEDUMI_BLAS_CAT_(a, b)
 
 #if defined(SEDUMI_BLAS_NO_UNDERSCORE)
-#define FORT(x) x
+#define SEDUMI_BLAS_MANGLED(x) x
 #else
-#define FORT(x) x##_
+#define SEDUMI_BLAS_MANGLED(x) x##_
 #endif
+
+#define FORT(x) \
+    SEDUMI_BLAS_CAT(SEDUMI_BLAS_CAT(BLAS_SYMBOL_PREFIX, SEDUMI_BLAS_MANGLED(x)), BLAS_SYMBOL_SUFFIX)
 
 extern void FORT(dcopy)(const blasint *n, const double *x, const blasint *incx,
                          double *y, const blasint *incy);
@@ -105,14 +140,16 @@ typedef ptrdiff_t blasint;
 #endif /* SEDUMI_STANDALONE */
 
 /* Guards the mwIndex -> blasint narrowing that every FORT()-wrapped BLAS
-   call below does (`blasint one=1,nn=n;`). The BLAS interface integer is
-   narrower than this code's own index type in the standalone build: a
+   call below does (`blasint one=1,nn=n;`). The BLAS interface integer can
+   be narrower than this code's own index type in the standalone build: a
    reference-BLAS/OpenBLAS/Accelerate LP64 interface takes a 32-bit
    Fortran INTEGER, while mwIndex is size_t. Exceeding it needs a single
    contiguous vector longer than 2^31 doubles (~17 GB), which no problem
    this solver can set up will reach -- but the conversion is implicit
    and would silently truncate rather than fail, so trap it instead of
-   computing a wrong answer.
+   computing a wrong answer. (An ILP64 build -- SEDUMI_BLAS_ILP64, e.g.
+   scipy-openblas64 -- has no such 32-bit limit, same as MATLAB below;
+   this can only actually trigger with a 32-bit blasint.)
 
    Written as a round-trip rather than a comparison against INT_MAX so it
    stays correct for every build: blasint is ptrdiff_t under MATLAB (an
@@ -123,7 +160,6 @@ typedef ptrdiff_t blasint;
 #define SEDUMI_ASSERT_BLASINT_FITS(nn, n)                                \
     SEDUMI_ASSERT((mwIndex)(nn) == (mwIndex)(n),                         \
                   "vector length exceeds this build's BLAS integer "     \
-                  "width (32-bit Fortran INTEGER in the standalone "     \
-                  "build -- see sedumi_platform.h)")
+                  "width -- see sedumi_platform.h")
 
 #endif /* SEDUMI_PLATFORM_H */

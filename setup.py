@@ -74,13 +74,18 @@ def build_bash_command(build_script: Path, out_path: Path) -> list[str]:
     stub there that just prints "Windows Subsystem for Linux has no
     installed distributions" and exits nonzero -- it would silently
     shadow MSYS2's real bash.exe even with MSYS2 correctly first on
-    PATH."""
+    PATH.
+
+    sys.executable is passed through as build_libsedumi.sh's third
+    argument so it probes *this* Python -- the one pip is building
+    in -- for scipy-openblas64 (see tools/build_libsedumi.sh), not
+    whatever bare `python3` happens to be first on PATH."""
     if sys.platform != "win32":
-        return [str(build_script), str(out_path)]
+        return [str(build_script), str(out_path), sys.executable]
     bash = shutil.which("bash")
     if bash is None:
         raise RuntimeError(WINDOWS_BUILD_HELP)
-    return [bash, str(build_script), str(out_path)]
+    return [bash, str(build_script), str(out_path), sys.executable]
 
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext

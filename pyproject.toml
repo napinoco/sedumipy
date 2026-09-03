@@ -46,69 +46,107 @@ where = ["src"]
 include = ["sedumipy*"]
 
 # Verified in .github/workflows/wheels.yml -- Linux (manylinux, via
-# cibuildwheel's own containers), macOS (Accelerate framework), and
-# Windows (MSYS2 MinGW64 + OpenBLAS, repaired with delvewheel) all build
-# for real on GitHub Actions. win_arm64 stays skipped: MSYS2's
-# mingw-w64-x86_64-openblas package is x86_64-only.
+# cibuildwheel's own containers), macOS, and Windows (MSYS2 MinGW64 for
+# the compiler only now) all build for real on GitHub Actions. Linux and
+# Windows link scipy-openblas64 (see tools/build_libsedumi.sh) as their
+# BLAS instead of a system-package/MSYS2 install -- a pip-installable,
+# prebuilt ILP64 OpenBLAS, so `before-build` is a one-line install on
+# both rather than two different system-package recipes. macOS keeps
+# linking the system Accelerate framework, as before this switch: it
+# never had Linux/Windows's build/install pain (Accelerate needs no
+# install step at all), so there's nothing here for scipy-openblas64 to
+# save -- see build_libsedumi.sh's Darwin case for the full reasoning,
+# and its `[tool.cibuildwheel.macos]` section below for the resulting
+# no-op `before-build`.
+#
+# Pinned to an exact version in the `before-build` lines below, not
+# left floating: this project's own code computes the mangled BLAS symbol
+# names and blasint width from scipy-openblas64's pkg-config metadata
+# (see tools/build_libsedumi.sh/csrc/sedumi_platform.h) rather than
+# hardcoding them, but an unpinned `pip install` would still let a
+# future scipy-openblas64 release change that metadata's shape (or drop
+# ILP64, or something else entirely) and silently break every build
+# until noticed. Bumping it is a deliberate, tested action -- update
+# this same string in .github/workflows/ci.yml, README.md,
+# CONTRIBUTING.md and docs/installation.rst together, then re-run the
+# full test suite and the SDPLIB/DIMACS mini benchmarks against it
+# before pushing.
+#
+# --no-build-isolation is required for that: scipy-openblas64 is not
+# declared in this project's own [build-system] requires (deliberately
+# -- it isn't available for every platform `pip install` could target,
+# e.g. 32-bit x86/win32, and build_libsedumi.sh falls back to a system
+# BLAS there instead), so a normal isolated build would not see the
+# copy `before-build` just installed: pip's build isolation runs
+# setup.py in a *separate* environment that only contains this
+# project's declared build requirements, invisible to `import
+# scipy_openblas64` even though it's the same Python interpreter.
+# Skipping isolation makes cibuildwheel's own venv (where before-build
+# just installed it) the one setup.py actually runs in. macOS overrides
+# this back to normal isolation below (see [tool.cibuildwheel.macos]) --
+# it is NOT harmless to leave on there: --no-build-isolation also means
+# pip won't auto-install this project's own [build-system] requires
+# (setuptools>=68) into an isolated env, so without either build
+# isolation restored or setuptools installed by some other means, the
+# build fails outright with "ModuleNotFoundError: No module named
+# 'setuptools'" (confirmed the hard way in CI once before-build stopped
+# installing anything on macOS).
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"
 skip = "*-musllinux_* *_i686 *-win32 *-win_arm64"
+build-frontend = { name = "pip", args = ["--no-build-isolation"] }
+before-build = "pip install setuptools scipy-openblas64==0.3.34.106.0"
 test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0\""
 
 [tool.cibuildwheel.linux]
-# manylinux containers are yum/dnf-based (AlmaLinux); libsedumi.so only
-# needs BLAS (see tools/build_libsedumi.sh), not LAPACK.
-#
-# openblas-devel, not blas-devel: whatever is installed here is what
-# auditwheel vendors into the wheel, so it is what every Linux user who
-# installs from PyPI actually runs. That used to be the reference Netlib
-# implementation, which measures ~3x slower than OpenBLAS on the Level-1
-# kernels this library calls -- see tools/build_libsedumi.sh's note. The
-# `||` is the yum-vs-apt image split, not a Netlib fallback: if OpenBLAS
-# is genuinely unavailable the build should fail loudly here rather than
-# quietly ship the slow one again.
-before-all = "yum install -y openblas-devel || apt-get install -y libopenblas-dev"
 # cibuildwheel 2.x's default manylinux image is still manylinux2014;
 # recent numpy/scipy releases have dropped wheel support for it, so the
 # test-command step's `pip install` (numpy/scipy come from sedumipy's
 # own [project.dependencies], not built here) fell back to building
 # scipy from source -- which then failed for the unrelated reason that
-# this bare container has no OpenBLAS for *scipy's* build, only the
-# blas-devel/libblas-dev installed above for libsedumi.so itself.
-# manylinux_2_28 has current numpy/scipy wheels available and is still
-# yum/dnf-based, so `before-all` above needs no change.
+# this bare container has no BLAS for *scipy's* own build. manylinux_2_28
+# has current numpy/scipy wheels available, sidestepping that.
 manylinux-x86_64-image = "manylinux_2_28"
+# auditwheel vendors libscipy_openblas64_.so (a shared library the
+# global before-build's pip install placed under this venv's own
+# site-packages, found via the rpath tools/build_libsedumi.sh links
+# with) into the wheel the same way it already vendored -lopenblas
+# before this switch -- no extra config needed here for that part.
 
-# No [tool.cibuildwheel.macos] before-all: tools/build_libsedumi.sh links
-# against the system Accelerate framework on Darwin, so nothing needs
-# installing there.
+[tool.cibuildwheel.macos]
+# Overrides the global before-build to skip installing scipy-openblas64:
+# macOS links the system Accelerate framework instead (see
+# build_libsedumi.sh's Darwin case for why), so it would be installed
+# only to sit unused -- wasted download/install time on every build, and
+# a false impression from reading before-build alone that macOS uses it
+# too. "true" is a plain no-op shell command, not a typo.
+before-build = "true"
+# Also overrides build-frontend back to plain isolated pip (dropping the
+# global --no-build-isolation): macOS has nothing for that flag to
+# preserve visibility of (no scipy-openblas64 import to protect, per
+# above), and a normal isolated build installs this project's own
+# [build-system] requires (setuptools>=68) automatically -- which
+# before-build no longer does now that it's a no-op. Skipping this
+# override left setuptools missing entirely and the build failing with
+# "ModuleNotFoundError: No module named 'setuptools'" (confirmed in CI).
+build-frontend = "default"
+# No repair-wheel-command override needed: delocate (cibuildwheel's
+# macOS default) has nothing to vendor here, same as before this switch
+# -- Accelerate is a system framework, not a bundled shared library.
 
 [tool.cibuildwheel.windows]
-# .github/workflows/wheels.yml's Windows job installs MSYS2 (bash, gcc,
-# openblas) and puts it on PATH before cibuildwheel runs, so
-# setup.py's `bash tools/build_libsedumi.sh` step (see setup.py's own
-# Windows note) can find them. The built libsedumi.dll dynamically
-# depends on libopenblas.dll and mingw's runtime DLLs, none of which are
-# on a plain end user's machine, so `delvewheel repair` bundles them
-# into the wheel -- the same role auditwheel/delocate play on
-# Linux/macOS, just not one of cibuildwheel's own built-in defaults for
-# Windows.
-before-build = "pip install delvewheel"
-# --analyze-existing is required here, not optional: delvewheel only
-# analyzes a wheel's *extension modules* (.pyd) by default, and this
-# wheel has none -- libsedumi.dll is a plain ctypes-loaded DLL (see
-# setup.py's docstring), so without this flag delvewheel finds nothing
-# to analyze and reports "no external dependencies are needed",
-# bundling nothing at all. That was not a sign the library is
-# self-contained: it links -lopenblas against MSYS2's libopenblas.dll.a
-# import library (see tools/build_libsedumi.sh), so libopenblas.dll and
-# the mingw runtime DLLs really are dynamic dependencies, and a wheel
-# without them fails to load on any machine that doesn't happen to have
-# MSYS2 installed.
-#
-# C:\toolchain-mingw64\mingw64\bin (not C:\msys64\mingw64\bin): see
-# wheels.yml's "Verify MSYS2 gcc/openblas, then copy it out of C:\msys64"
-# step -- the build itself resolves gcc from the copy via MSYS2_ROOT, so
-# the DLLs delvewheel needs to bundle live there too, not in the
-# original MSYS2 install.
-repair-wheel-command = "delvewheel repair --analyze-existing --add-path C:\\toolchain-mingw64\\mingw64\\bin;C:\\msys64\\usr\\bin -w {dest_dir} {wheel}"
+# .github/workflows/wheels.yml's Windows job installs MSYS2 (bash, gcc)
+# and puts it on PATH before cibuildwheel runs, so setup.py's `bash
+# tools/build_libsedumi.sh` step (see setup.py's own Windows note) can
+# find them -- still needed for the compiler even though scipy-openblas64
+# now supplies the BLAS (MSVC can't build this, see setup.py's
+# WINDOWS_BUILD_HELP). `delvewheel repair` bundles libscipy_openblas64_.dll
+# and the mingw runtime DLLs into the wheel, none of which are on a plain
+# end user's machine -- the same role auditwheel plays on Linux (macOS
+# needs no such vendoring, see [tool.cibuildwheel.macos] above), just
+# not one of cibuildwheel's own built-in defaults for Windows.
+# tools/repair_windows_wheel.py exists only because the
+# scipy-openblas64 DLL's directory (a site-packages path inside this
+# venv) has to be resolved in Python at repair time, not hardcoded here.
+before-build = "pip install setuptools delvewheel scipy-openblas64==0.3.34.106.0"
+repair-wheel-command = "python tools/repair_windows_wheel.py {wheel} {dest_dir}"

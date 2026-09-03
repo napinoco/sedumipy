@@ -31,7 +31,9 @@ fi
 
 # macOS is the one platform that legitimately bundles nothing: the
 # Darwin build links Accelerate, a system framework present on every
-# Mac, so there is no BLAS to carry along.
+# Mac, so there is no BLAS to carry along (see build_libsedumi.sh's
+# Darwin case for why it stays that way even though Linux/Windows now
+# link scipy-openblas64 instead of their own system BLAS).
 expect_bundled=1
 case "$(uname -s)" in
   Darwin) expect_bundled=0 ;;

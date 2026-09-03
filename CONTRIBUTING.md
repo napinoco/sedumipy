@@ -15,13 +15,32 @@
 
 **開発環境の前提条件:** `pip install -e .[test]` は初回importで
 `libsedumi.so` をビルドするため(`_native.py`の`_ensure_built()`)、
-Cコンパイラ(`gcc`)とBLAS開発ヘッダー(Debian/Ubuntuなら
-`apt install build-essential libblas-dev`)が事前に入っている必要が
-あります(`tools/build_libsedumi.sh`参照。LAPACKは実際には未使用 --
-`-lblas`のみでリンクしています)。素のコンテナ/CI環境ではこれが
-入っておらず`-lblas: not found`でビルドが失敗することがあるので、
-新しい環境で最初にハマったらまずここを疑ってください。
-(`.github/workflows/ci.yml`がこの手順を毎回実行して確認しています。)
+Cコンパイラ(`gcc`)が事前に入っている必要があります(Debian/Ubuntuなら
+`apt install build-essential`)。BLASについては、**macOSだけは常に
+システムのAccelerateフレームワークを使う**(インストール不要、
+`tools/build_libsedumi.sh`のDarwin分岐が無条件にそうする -- macOSは
+そもそもLinux/Windowsにあるような「BLASを自分で入れる/ビルドする」
+苦労が最初から無いので、scipy-openblas64を使うメリットが無く、
+Apple Silicon向けのAccelerateのチューニングを捨ててまで揃える理由も
+無いという判断)。Linux/Windowsでは、`pip install
+scipy-openblas64==0.3.34.106.0` を先に実行してから `pip install -e
+.[test] --no-build-isolation` すると、公開wheelが実際にリンクしている
+のと同じ、pipだけで入る事前ビルド済みILP64 OpenBLAS
+(`scipy-openblas64`)を使う(`tools/build_libsedumi.sh`が
+importできるかを見て自動選択、詳細は同ファイルと
+`csrc/sedumi_platform.h`の`SEDUMI_BLAS_ILP64`参照)。バージョンを
+固定しているのは意図的(破壊的変更でビルドが突然壊れるのを防ぐため)
+なので、上げるときは`pyproject.toml`のコメントにある通り
+`.github/workflows/ci.yml`/`README.md`/`docs/installation.rst`の
+同じ文字列も揃えて更新し、テストとベンチマークを再実行すること。
+それをしなければ
+Linux/Windowsそれぞれのシステムbuild BLASにフォールバックする
+(Linuxなら`libblas`/`libopenblas`開発ヘッダー、例えば`apt install
+libopenblas-dev`。LAPACKは実際には未使用 -- BLASのみでリンクしている)。
+素のコンテナ/CI環境ではどちらも入っておらずビルドが失敗することが
+あるので、新しい環境で最初にハマったらまずここを疑ってください。
+(`.github/workflows/ci.yml`がこの両方の経路を毎回実行して確認して
+います。)
 
 **Windows開発環境について:** `tools/build_libsedumi.sh`はbashスクリプト
 なので、Windowsではそのまま実行できません(`setup.py`/`_native.py`は
@@ -30,16 +49,18 @@ Windows(`sys.platform == "win32"`)のときだけ`bash tools/build_libsedumi.sh
 をインストールし、MINGW64シェルから
 
 ```
-pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+pacman -S mingw-w64-x86_64-gcc
 ```
 
-を実行して`bash`/`gcc`/`libopenblas`をWindowsのPATHに通した状態
-(`C:\msys64\mingw64\bin`と`C:\msys64\usr\bin`)で`pip install -e .[test]`
-すれば、他OSと同じ手順でビルド・テストできます。`libsedumi.dll`は
-`libopenblas.dll`とmingwランタイムDLLに動的リンクされる(スタンドアロン
-のctypes向けDLLで、CPython拡張のようにコンパイラを合わせる必要は
-そもそもない)ため、配布可能なwheelにするには`delvewheel repair`で
-それらを同梱する必要があります(`.github/workflows/wheels.yml`/
+を実行して`bash`/`gcc`をWindowsのPATHに通した状態(`C:\msys64\mingw64\bin`
+と`C:\msys64\usr\bin`)にすれば、他OSと同じ手順でビルド・テストできます
+(BLASは上記の`scipy-openblas64`経路が使われる。使わない場合は
+`mingw-w64-x86_64-openblas`も追加でインストールする必要がある)。
+`libsedumi.dll`はBLASのDLLとmingwランタイムDLLに動的リンクされる
+(スタンドアロンのctypes向けDLLで、CPython拡張のようにコンパイラを
+合わせる必要はそもそもない)ため、配布可能なwheelにするには
+`delvewheel repair`でそれらを同梱する必要があります
+(`.github/workflows/wheels.yml`/`tools/repair_windows_wheel.py`/
 `pyproject.toml`の`[tool.cibuildwheel.windows]`参照)。実機Windows環境
 での動作確認はこのセッションではできていない(このリポジトリの開発は
 Linux上で行われている)ため、CIでの実行結果が実質的な検証です。

@@ -106,9 +106,9 @@ def _ensure_built() -> Path:
                 "Full instructions: https://github.com/napinoco/sedumipy"
                 "/blob/main/docs/installation.rst"
             )
-        command = [bash, str(build_script), str(_LIB_PATH)]
+        command = [bash, str(build_script), str(_LIB_PATH), sys.executable]
     else:
-        command = [str(build_script), str(_LIB_PATH)]
+        command = [str(build_script), str(_LIB_PATH), sys.executable]
     subprocess.run(command, check=True, cwd=_REPO_ROOT)
     if not _LIB_PATH.exists():
         raise RuntimeError(f"build_libsedumi.sh ran but did not produce {_LIB_PATH}")
@@ -159,6 +159,17 @@ if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
                 os.add_dll_directory(_candidate)
             except OSError:
                 pass
+    # A dev/editable install that built against scipy-openblas64 (see
+    # tools/build_libsedumi.sh) links libsedumi.dll against
+    # libscipy_openblas64_.dll sitting in that package's own site-packages
+    # directory, not one of the two directories above -- register it too,
+    # same as the MSYS2 ones, only if it's actually importable.
+    try:
+        import scipy_openblas64 as _sob
+
+        os.add_dll_directory(_sob.get_lib_dir())
+    except ImportError:
+        pass
 
 _lib = ctypes.CDLL(str(_built_lib_path))
 

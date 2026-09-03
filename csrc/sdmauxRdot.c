@@ -43,6 +43,7 @@
 double realdot(const double *x, const double *y, const mwIndex n)
 {
     blasint one=1,nn=n;
+    SEDUMI_ASSERT_BLASINT_FITS(nn, n);
     return FORT(ddot)(&nn,(double*)x,&one,(double*)y,&one);
 }
 
@@ -53,5 +54,6 @@ double realdot(const double *x, const double *y, const mwIndex n)
 double realssqr(const double *x, const mwIndex n)
 {
     blasint one=1,nn=n;
+    SEDUMI_ASSERT_BLASINT_FITS(nn, n);
     return FORT(ddot)(&nn,(double*)x,&one,(double*)x,&one);
 }

@@ -104,4 +104,26 @@ typedef ptrdiff_t blasint;
 
 #endif /* SEDUMI_STANDALONE */
 
+/* Guards the mwIndex -> blasint narrowing that every FORT()-wrapped BLAS
+   call below does (`blasint one=1,nn=n;`). The BLAS interface integer is
+   narrower than this code's own index type in the standalone build: a
+   reference-BLAS/OpenBLAS/Accelerate LP64 interface takes a 32-bit
+   Fortran INTEGER, while mwIndex is size_t. Exceeding it needs a single
+   contiguous vector longer than 2^31 doubles (~17 GB), which no problem
+   this solver can set up will reach -- but the conversion is implicit
+   and would silently truncate rather than fail, so trap it instead of
+   computing a wrong answer.
+
+   Written as a round-trip rather than a comparison against INT_MAX so it
+   stays correct for every build: blasint is ptrdiff_t under MATLAB (an
+   ILP64 BLAS, where this can never trigger) and whatever OpenBLAS's
+   f77blas.h says under Octave. Casting back through mwIndex also catches
+   the sign flip when bit 31 is set, since blasint is signed and mwIndex
+   is not. */
+#define SEDUMI_ASSERT_BLASINT_FITS(nn, n)                                \
+    SEDUMI_ASSERT((mwIndex)(nn) == (mwIndex)(n),                         \
+                  "vector length exceeds this build's BLAS integer "     \
+                  "width (32-bit Fortran INTEGER in the standalone "     \
+                  "build -- see sedumi_platform.h)")
+
 #endif /* SEDUMI_PLATFORM_H */

@@ -58,7 +58,16 @@ test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.se
 [tool.cibuildwheel.linux]
 # manylinux containers are yum/dnf-based (AlmaLinux); libsedumi.so only
 # needs BLAS (see tools/build_libsedumi.sh), not LAPACK.
-before-all = "yum install -y blas-devel || apt-get install -y libblas-dev"
+#
+# openblas-devel, not blas-devel: whatever is installed here is what
+# auditwheel vendors into the wheel, so it is what every Linux user who
+# installs from PyPI actually runs. That used to be the reference Netlib
+# implementation, which measures ~3x slower than OpenBLAS on the Level-1
+# kernels this library calls -- see tools/build_libsedumi.sh's note. The
+# `||` is the yum-vs-apt image split, not a Netlib fallback: if OpenBLAS
+# is genuinely unavailable the build should fail loudly here rather than
+# quietly ship the slow one again.
+before-all = "yum install -y openblas-devel || apt-get install -y libopenblas-dev"
 # cibuildwheel 2.x's default manylinux image is still manylinux2014;
 # recent numpy/scipy releases have dropped wheel support for it, so the
 # test-command step's `pip install` (numpy/scipy come from sedumipy's

@@ -92,9 +92,19 @@ def _ensure_built() -> Path:
         bash = shutil.which("bash")
         if bash is None:
             raise RuntimeError(
-                "libsedumi needs to be built but no `bash` was found on "
-                "PATH (expected an MSYS2 MinGW64 install -- see "
-                "CONTRIBUTING.md's Windows note)."
+                "libsedumi.dll is missing and has to be built, but no "
+                "`bash` was found on PATH.\n\n"
+                "Building on Windows needs an MSYS2 MinGW64 toolchain: "
+                "install MSYS2 from https://www.msys2.org/, run\n\n"
+                "    pacman -S mingw-w64-x86_64-gcc "
+                "mingw-w64-x86_64-openblas\n\n"
+                "in an MSYS2 MinGW64 shell, then add both "
+                "C:\\msys64\\usr\\bin and C:\\msys64\\mingw64\\bin to "
+                "PATH. MSVC will not work in its place -- the build is a "
+                "bash script, and libsedumi.dll is a plain ctypes-loaded "
+                "DLL rather than a CPython extension.\n\n"
+                "Full instructions: https://github.com/napinoco/sedumipy"
+                "/blob/main/docs/installation.rst"
             )
         command = [bash, str(build_script), str(_LIB_PATH)]
     else:

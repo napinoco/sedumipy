@@ -33,6 +33,36 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Reaching this means pip is compiling from the source distribution --
+# almost always because no prebuilt wheel matched the platform. Say so:
+# the bare "no bash on PATH" this replaced left an end user, who never
+# asked to compile anything, to work out both why a Python install
+# wanted a Unix shell and what to do about it. Keep the wheel coverage
+# list in step with pyproject.toml's [tool.cibuildwheel] build/skip.
+WINDOWS_BUILD_HELP = """\
+sedumipy is being built from source, which on Windows needs an MSYS2
+MinGW64 toolchain -- and no `bash` was found on PATH.
+
+You are most likely seeing this because pip fell back to the source
+distribution: prebuilt wheels are published for 64-bit x86 Windows,
+Linux (x86_64) and macOS (Apple silicon) on CPython 3.10-3.13, so any
+other target -- 32-bit or ARM Windows, Alpine/musl, Linux aarch64,
+Intel macOS -- is compiled here instead.
+
+To build it, install MSYS2 from https://www.msys2.org/ and run this in
+an MSYS2 MinGW64 shell:
+
+    pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+
+then add both C:\\msys64\\usr\\bin and C:\\msys64\\mingw64\\bin to PATH
+and reinstall. MSVC will not work in its place: libsedumi.dll is a
+plain ctypes-loaded DLL rather than a CPython extension, and the build
+is a bash script.
+
+Full instructions:
+https://github.com/napinoco/sedumipy/blob/main/docs/installation.rst\
+"""
+
 
 def build_bash_command(build_script: Path, out_path: Path) -> list[str]:
     """Non-Windows: run build_script directly (it's executable, with a
@@ -49,11 +79,7 @@ def build_bash_command(build_script: Path, out_path: Path) -> list[str]:
         return [str(build_script), str(out_path)]
     bash = shutil.which("bash")
     if bash is None:
-        raise RuntimeError(
-            "libsedumi.dll needs to be built but no `bash` was found on "
-            "PATH (expected an MSYS2 MinGW64 install -- see "
-            "CONTRIBUTING.md's Windows note)."
-        )
+        raise RuntimeError(WINDOWS_BUILD_HELP)
     return [bash, str(build_script), str(out_path)]
 
 from setuptools import Extension, setup

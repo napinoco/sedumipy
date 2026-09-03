@@ -1,0 +1,159 @@
+name: wheels
+
+# Builds and (optionally) tests-installs wheels via cibuildwheel -- see
+# pyproject.toml's [tool.cibuildwheel] for the actual build/test config.
+# Linux runs manylinux containers (real Docker), macOS runs on a real
+# Mac, and Windows runs on a real Windows box with MSYS2 installed below
+# -- all three provided by GitHub Actions. This is the actual
+# verification CONTRIBUTING.md's Phase 6 note flagged as not yet done in
+# earlier development (no Docker/macOS/Windows available there).
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "csrc/**"
+      - "src/**"
+      - "tools/build_libsedumi.sh"
+      - "setup.py"
+      - "pyproject.toml"
+      - ".github/workflows/wheels.yml"
+  pull_request:
+    paths:
+      - "csrc/**"
+      - "src/**"
+      - "tools/build_libsedumi.sh"
+      - "setup.py"
+      - "pyproject.toml"
+      - ".github/workflows/wheels.yml"
+  workflow_dispatch: {}
+  release:
+    types: [published]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pypa/cibuildwheel@v2.21
+      - name: Show what each repaired wheel bundles
+        shell: bash
+        run: bash tools/show_wheel_libs.sh wheelhouse/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Without this, mingw-w64-x86_64-gcc's freshly-extracted .exe/.dll
+      # files (a compiler toolchain is hundreds of small, unsigned
+      # binaries) can end up silently removed some time after being
+      # written -- confirmed in ci.yml's test-windows job: a
+      # `shell: msys2 {0}` verify step right after setup-msys2's install
+      # finds gcc.exe present and working, yet the same path is gone by
+      # the time `pip install`'s build_ext step reaches it ~20s later,
+      # after only a plain `Set-MpPreference -DisableRealtimeMonitoring
+      # $true`. Strengthen it: also disable behavior monitoring/IOAV/
+      # script scanning and add an explicit folder exclusion (belt-and-
+      # suspenders in case real-time disable alone doesn't stick).
+      - name: Disable Windows Defender scanning of C:\msys64
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Set-MpPreference -DisableBehaviorMonitoring $true
+          Set-MpPreference -DisableBlockAtFirstSeen $true
+          Set-MpPreference -DisableIOAVProtection $true
+          Set-MpPreference -DisableScriptScanning $true
+          Set-MpPreference -PUAProtection Disabled
+          Add-MpPreference -ExclusionPath 'C:\msys64'
+          Add-MpPreference -ExclusionPath 'C:\toolchain-mingw64'
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+      # `shell: msys2 {0}` is the action's own supported way to run
+      # commands inside the environment (unlike our raw `bash`
+      # invocations elsewhere, which have had their own PATH/mount
+      # surprises) -- use it to verify directly and force a real
+      # reinstall if anything is missing.
+      #
+      # Confirmed in ci.yml's test-windows job over many runs: gcc.exe/
+      # libopenblas are present and working right here, yet
+      # C:\msys64\mingw64\bin ends up empty by the time pip's build_ext
+      # step reaches it, even with Defender's real-time protection
+      # measured off. Root cause still unconfirmed -- sidestep it instead
+      # of continuing to guess at Defender settings: copy the verified
+      # toolchain out of C:\msys64 to an unrelated path immediately, in
+      # this same step, and point everything downstream (PATH,
+      # build_libsedumi.sh's MSYS2_ROOT candidate, delvewheel's
+      # --add-path in pyproject.toml) at the copy instead.
+      - name: Verify MSYS2 gcc/openblas, then copy it out of C:\msys64
+        shell: msys2 {0}
+        run: |
+          if [ ! -x /mingw64/bin/gcc.exe ] || [ ! -f /mingw64/lib/libopenblas.dll.a ]; then
+            echo "gcc.exe/libopenblas missing after setup-msys2's install -- forcing a real reinstall"
+            pacman -Rns --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas 2>&1 || true
+            pacman -S --noconfirm --needed --overwrite '*' mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+          fi
+          ls -la /mingw64/bin/gcc.exe /mingw64/lib/libopenblas.dll.a
+          /mingw64/bin/gcc.exe --version
+          mkdir -p /c/toolchain-mingw64
+          cp -r /mingw64 /c/toolchain-mingw64/mingw64
+          ls -la /c/toolchain-mingw64/mingw64/bin/gcc.exe
+          /c/toolchain-mingw64/mingw64/bin/gcc.exe --version
+          echo "MSYS2_ROOT=C:/toolchain-mingw64" >> "$GITHUB_ENV"
+      # cibuildwheel spawns its own subprocesses (pip, setup.py, ...)
+      # outside of an MSYS2 shell, so bash/gcc/openblas need to be on the
+      # regular Windows PATH, not just the `shell: msys2 {0}` steps the
+      # action above sets up for.
+      - name: Put MSYS2 on PATH
+        shell: bash
+        run: |
+          echo "C:\toolchain-mingw64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
+      - uses: pypa/cibuildwheel@v2.21
+      - name: Show what each repaired wheel bundles
+        shell: bash
+        run: bash tools/show_wheel_libs.sh wheelhouse/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-latest
+          path: wheelhouse/*.whl
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build --sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish-to-release:
+    if: github.event_name == 'release'
+    needs: [build, build-windows, sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

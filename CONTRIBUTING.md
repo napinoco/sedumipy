@@ -13,6 +13,49 @@
 の submodule、フォーク時点のコミットに固定)に参照用として残っており、
 オラクル再生成(Octave実機での比較用データ生成)はこのsubmoduleを使います。
 
+**開発環境の前提条件:** `pip install -e .[test]` は初回importで
+`libsedumi.so` をビルドするため(`_native.py`の`_ensure_built()`)、
+Cコンパイラ(`gcc`)とBLAS開発ヘッダー(Debian/Ubuntuなら
+`apt install build-essential libblas-dev`)が事前に入っている必要が
+あります(`tools/build_libsedumi.sh`参照。LAPACKは実際には未使用 --
+`-lblas`のみでリンクしています)。素のコンテナ/CI環境ではこれが
+入っておらず`-lblas: not found`でビルドが失敗することがあるので、
+新しい環境で最初にハマったらまずここを疑ってください。
+(`.github/workflows/ci.yml`がこの手順を毎回実行して確認しています。)
+
+**Windows開発環境について:** `tools/build_libsedumi.sh`はbashスクリプト
+なので、Windowsではそのまま実行できません(`setup.py`/`_native.py`は
+Windows(`sys.platform == "win32"`)のときだけ`bash tools/build_libsedumi.sh
+...`のように明示的に`bash`経由で呼び出します)。[MSYS2](https://www.msys2.org/)
+をインストールし、MINGW64シェルから
+
+```
+pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+```
+
+を実行して`bash`/`gcc`/`libopenblas`をWindowsのPATHに通した状態
+(`C:\msys64\mingw64\bin`と`C:\msys64\usr\bin`)で`pip install -e .[test]`
+すれば、他OSと同じ手順でビルド・テストできます。`libsedumi.dll`は
+`libopenblas.dll`とmingwランタイムDLLに動的リンクされる(スタンドアロン
+のctypes向けDLLで、CPython拡張のようにコンパイラを合わせる必要は
+そもそもない)ため、配布可能なwheelにするには`delvewheel repair`で
+それらを同梱する必要があります(`.github/workflows/wheels.yml`/
+`pyproject.toml`の`[tool.cibuildwheel.windows]`参照)。実機Windows環境
+での動作確認はこのセッションではできていない(このリポジトリの開発は
+Linux上で行われている)ため、CIでの実行結果が実質的な検証です。
+
+`tools/build_libsedumi.sh`のWindows分岐は`gcc`をPATH経由でもMSYS2の
+`/mingw64`という疑似パス経由でもなく、`C:\msys64\mingw64\bin\gcc.exe`
+という**Windowsスタイルの絶対パス**で直接呼びます(`MSYS2_ROOT`環境変数で
+上書き可能)。理由は2つ実機CIで確認済み: (1) GitHub Actions
+Windowsランナーには無関係な別のMinGWツールチェーンが`C:\mingw64`に
+プリインストールされており、素の`gcc`呼び出しはそちらを拾ってしまう
+(`-lopenblas`が無くリンクに失敗する)。(2) MSYS2自体の`/mingw64`という
+POSIX風マウントも、対話的/ログインシェルでない素の`bash script.sh`
+呼び出しでは解決されない(実際にCI上で`mingw-w64-x86_64-gcc`を直前に
+インストール済みの状態でも`/mingw64/bin/gcc.exe: No such file or
+directory`になることを確認済み)。
+
 ## 1. プロジェクトのゴール
 
 SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` ファイル
@@ -44,7 +87,7 @@ SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` �
 | Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
 | Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **完了** |
 | Phase 5 | 検証・ベンチマーク | **完了** |
-| Phase 6 | パッケージング・リリース | **一部完了(wheelビルド自体は動作確認済み、manylinux/CI上での検証は未着手)** |
+| Phase 6 | パッケージング・リリース | **一部完了(Linux/macOS/WindowsともCI (`.github/workflows/wheels.yml`) 上でcibuildwheelビルドを実行する設定は完了。PyPI公開・manylinux向けBLAS同梱 (`auditwheel repair`) はまだ) |
 
 Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PSD(半正定値
 錐)問題について完了**しており、実際に `sedumipy.sedumi.sedumi(A,b,c,K)` を
@@ -487,6 +530,36 @@ Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない
    本当にPyPI配布可能なmanylinux wheelにするには`auditwheel repair`
    でこれらを同梱するか静的リンクに切り替える必要がある。今回は
    その作業までは行っていない)。
+
+   **別セッションで追加でやったこと(CI導入・macOS/Windows対応):**
+   `.github/workflows/{ci,wheels,docs}.yml`を新設し、この環境に無かった
+   Docker/macOS/Windowsでの実行を実際のGitHub Actions上で行う形にした。
+   - **macOS:** `before-all`がyum/apt限定で、macOSにはどちらも存在せず
+     元の設定のままでは確実に壊れていたことが判明。`tools/build_libsedumi.sh`
+     を修正し、Homebrewなしで使えるOS標準のAccelerateフレームワーク
+     (`-framework Accelerate`)にリンクするようにした(コンパイラも
+     `gcc`ではなく`cc`。macOSの`gcc`は通常clangのエイリアスに過ぎない
+     ため)。
+   - **Windows:** `cl.exe`への移植ではなく、MSYS2のMinGW64ツールチェーン
+     (`mingw-w64-x86_64-gcc`/`mingw-w64-x86_64-openblas`)を使う方針にした
+     ―― `libsedumi.dll`は`PyInit_*`を持つCPython拡張ではなくctypesが
+     読み込むだけの素のDLLなので、Pythonをビルドしたコンパイラと合わせる
+     必要がそもそもなく、`sedumi_platform.h`のBLASシンボル名規約
+     (`FORT(x) = x##_`)もLinux/macOS/Windows共通でOpenBLASと一致する
+     ため、MSVC移植より遥かにリスクが低いと判断した。`setup.py`/
+     `_native.py`は`sys.platform == "win32"`のとき`bash tools/
+     build_libsedumi.sh ...`を明示的に`bash`経由で呼ぶように変更
+     (Windowsはshebangを解釈しない)。ビルドされる`libsedumi.dll`は
+     `libopenblas.dll`とmingwランタイムDLLに動的リンクされるため、
+     配布可能なwheelにするには`delvewheel repair`での同梱が必要
+     (`auditwheel`/`delocate`のWindows版に相当。cibuildwheelの
+     Windows向けデフォルトには含まれないため`pyproject.toml`の
+     `[tool.cibuildwheel.windows]`で明示的に設定)。
+   - **実機での動作確認について:** このリポジトリの開発はLinux環境で
+     行われており、macOS/Windows実機は使えなかった。上記の変更は
+     GitHub Actions上の実際のmacOS/Windowsランナーでの`ci.yml`/
+     `wheels.yml`実行結果が実質的な検証になる(PRを作成してCIの
+     結果を確認する運用を想定)。
 5. **`getdatm.py`のOOM修正(`DAt.q`常時sparse化)が、逆にdenseな方が
    速い小〜中規模問題を遅化させていた件。修正済み。** `has_psd=False`
    (LP+SOCPのみ、K.s==0)経路で`DAt.q`/`ADA`を常にsparseで組み立てる

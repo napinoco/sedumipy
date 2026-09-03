@@ -1,0 +1,10 @@
+# Dependencies for building the Sphinx docs (see docs/conf.py). Kept
+# separate from pyproject.toml's [project.optional-dependencies].docs
+# extra so the GitHub Pages workflow (.github/workflows/docs.yml) can
+# install just these, without also triggering the package's own
+# libsedumi.so build step.
+sphinx>=7.0
+furo
+myst-parser
+numpy>=1.24
+scipy>=1.10

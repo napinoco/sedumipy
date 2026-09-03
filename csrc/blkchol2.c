@@ -53,6 +53,7 @@ mwIndex blkLDL(const mwIndex neqns, const mwIndex nsuper, const mwIndex *xsuper,
 void isscalarmul(double *x, double alpha, mwIndex n)
 {
     blasint one=1,nn=n;
+    SEDUMI_ASSERT_BLASINT_FITS(nn, n);
     FORT(dscal)(&nn,&alpha,x,&one);
 }
 
@@ -66,6 +67,7 @@ void isscalarmul(double *x, double alpha, mwIndex n)
 double maxabs(const double *x,mwIndex n)
 {
     blasint one=1,nn=n;
+    SEDUMI_ASSERT_BLASINT_FITS(nn, n);
     return fabs(x[FORT(idamax)(&nn,(double*)x,&one)]);
 }
 

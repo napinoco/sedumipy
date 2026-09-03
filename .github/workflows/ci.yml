@@ -1,0 +1,198 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # No submodules checked out here on purpose: the committed
+    # tests/fixtures/*.mat oracle data is enough to run the real test
+    # suite (see CONTRIBUTING.md section 8) without Octave or the
+    # vendor/examples submodules. Tests that do need a submodule
+    # (test_matio.py's gzip case, test_golden_end_to_end.py) skip
+    # themselves via pytest.mark.skipif when it's absent.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two axes that matter for different reasons, so they are listed
+        # as explicit combinations rather than multiplied out: the Python
+        # version exercises the pure-Python layer (platform- and
+        # BLAS-independent), while the BLAS implementation exercises
+        # libsedumi.so's numerics (Python-version-independent).
+        #
+        # libblas-dev is the reference Netlib implementation;
+        # libopenblas-dev is what most real Linux users actually have
+        # installed, and Debian/Ubuntu's update-alternatives makes
+        # `-lblas` resolve to it transparently, so tools/build_libsedumi.sh
+        # needs no change. A different BLAS means different blocking/SIMD/
+        # FMA and therefore different rounding, which is exactly what the
+        # oracle comparisons' rtol/atol have to absorb -- see the macOS
+        # (Accelerate) job below.
+        include:
+          - python-version: "3.10"
+            blas: libblas-dev
+          - python-version: "3.13"
+            blas: libblas-dev
+          - python-version: "3.13"
+            blas: libopenblas-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: sudo apt-get update && sudo apt-get install -y ${{ matrix.blas }}
+      - run: pip install -e .[test]
+      - run: python -m pytest tests/ -q
+
+  test-macos:
+    # Separate from the `test` matrix above: nothing to install (the
+    # Darwin branch of tools/build_libsedumi.sh links the system
+    # Accelerate framework, which every Mac ships), and no apt-get to
+    # install it with anyway.
+    #
+    # This is the only job that runs the real test suite against
+    # Accelerate -- Apple's own BLAS, the most divergent of the three
+    # implementations CI covers. wheels.yml's macOS job is not a
+    # substitute: its test-command solves a single 2x2 LP, which never
+    # reaches the sparse Cholesky, dense-column preconditioning or PSD
+    # cone paths where a BLAS difference would actually surface.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .[test]
+      - run: python -m pytest tests/ -q
+
+  test-windows:
+    # Separate from the `test` matrix above: needs MSYS2 (bash/gcc/
+    # openblas) on PATH first so `pip install -e .[test]` can build
+    # libsedumi.dll -- see setup.py's and tools/build_libsedumi.sh's
+    # Windows notes.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # mingw-w64-x86_64-gcc's freshly-extracted .exe/.dll files (a
+      # compiler toolchain is hundreds of small, unsigned binaries) have
+      # been observed silently removed from C:\msys64\mingw64 some time
+      # after being written, before `pip install`'s build_ext step gets
+      # to use them. Disabling every Defender knob that plausibly applies
+      # is cheap and left in as belt-and-suspenders, but it did NOT stop
+      # the disappearance on its own (confirmed via Get-MpComputerStatus
+      # readback below) -- see the "Verify MSYS2 gcc/openblas, then copy
+      # it out of C:\msys64" step further down for the actual workaround.
+      - name: Disable Windows Defender scanning of C:\msys64
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Set-MpPreference -DisableBehaviorMonitoring $true
+          Set-MpPreference -DisableBlockAtFirstSeen $true
+          Set-MpPreference -DisableIOAVProtection $true
+          Set-MpPreference -DisableScriptScanning $true
+          Set-MpPreference -PUAProtection Disabled
+          Add-MpPreference -ExclusionPath 'C:\msys64'
+          Add-MpPreference -ExclusionPath 'C:\toolchain-mingw64'
+          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled, AMServiceEnabled
+          Get-MpPreference | Select-Object DisableRealtimeMonitoring, ExclusionPath, PUAProtection
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+      # `shell: msys2 {0}` is the action's own supported way to run
+      # commands inside the environment (unlike our raw `bash`
+      # invocations elsewhere, which have had their own PATH/mount
+      # surprises) -- use it to verify gcc/openblas are actually there,
+      # and force a real reinstall if not (a corrupted package cache
+      # entry is a live possibility too: every run so far has hit the
+      # same cache key and reported "Cache unchanged, skipping save").
+      #
+      # Confirmed over many runs: gcc.exe/libopenblas are present and
+      # working right here, yet C:\msys64\mingw64\bin ends up empty by
+      # the time pip's build_ext step reaches it (in one run, less than
+      # half a second after this same check -- ruling out a slow async
+      # scan). Disabling Defender's real-time protection (above) did NOT
+      # stop it, and Get-MpComputerStatus confirmed real-time protection
+      # really was off, so root cause is still unconfirmed. Rather than
+      # keep guessing at Defender knobs, sidestep it: copy the verified
+      # toolchain out of C:\msys64 to an unrelated path immediately, in
+      # this same step (no time gap for whatever it is to act), and point
+      # everything downstream (PATH, build_libsedumi.sh's MSYS2_ROOT
+      # candidate, delvewheel's --add-path in pyproject.toml) at the copy
+      # instead. If C:\msys64 specifically is what's targeted, this
+      # avoids it regardless of what the actual cause turns out to be.
+      - name: Verify MSYS2 gcc/openblas, then copy it out of C:\msys64
+        shell: msys2 {0}
+        run: |
+          if [ ! -x /mingw64/bin/gcc.exe ] || [ ! -f /mingw64/lib/libopenblas.dll.a ]; then
+            echo "gcc.exe/libopenblas missing after setup-msys2's install -- forcing a real reinstall"
+            pacman -Rns --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas 2>&1 || true
+            pacman -S --noconfirm --needed --overwrite '*' mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+          fi
+          ls -la /mingw64/bin/gcc.exe /mingw64/lib/libopenblas.dll.a
+          /mingw64/bin/gcc.exe --version
+          mkdir -p /c/toolchain-mingw64
+          cp -r /mingw64 /c/toolchain-mingw64/mingw64
+          ls -la /c/toolchain-mingw64/mingw64/bin/gcc.exe
+          /c/toolchain-mingw64/mingw64/bin/gcc.exe --version
+          echo "MSYS2_ROOT=C:/toolchain-mingw64" >> "$GITHUB_ENV"
+      - name: Put MSYS2 on PATH
+        shell: bash
+        run: |
+          echo "C:\toolchain-mingw64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
+      # Pinpointing diagnostic: checks both the original C:\msys64 copy
+      # and the C:\toolchain-mingw64 copy immediately before pip install.
+      # If the copy is also gone, this pulls Defender's own detection
+      # history and event log to see conclusively whether Defender is
+      # even involved (real-time protection measured off above, so it
+      # may not be) rather than guessing at more Defender settings.
+      - name: Check gcc.exe right before pip install
+        shell: pwsh
+        run: |
+          $orig = Test-Path 'C:\msys64\mingw64\bin\gcc.exe'
+          $copy = Test-Path 'C:\toolchain-mingw64\mingw64\bin\gcc.exe'
+          Write-Host "original C:\msys64 gcc.exe present: $orig"
+          Write-Host "copied C:\toolchain-mingw64 gcc.exe present: $copy"
+          if (-not $copy) {
+            Write-Host "::warning::copied gcc.exe missing too -- not a C:\msys64-specific cause"
+            Write-Host "--- Get-MpThreatDetection ---"
+            Get-MpThreatDetection | Format-List * | Out-String | Write-Host
+            Write-Host "--- Get-MpThreat ---"
+            Get-MpThreat | Format-List * | Out-String | Write-Host
+            Write-Host "--- Recent Windows Defender operational log ---"
+            Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -MaxEvents 30 -ErrorAction SilentlyContinue |
+              Format-Table TimeCreated, Id, LevelDisplayName, Message -Wrap -AutoSize | Out-String -Width 300 | Write-Host
+          }
+      - run: pip install -e .[test]
+      - run: python -m pytest tests/ -q
+
+  benchmarks-mini:
+    # Separate job: needs the SDPLIB/DIMACS submodules (real published
+    # problems + their official optimal values), which the fast `test`
+    # job above deliberately skips checking out. `-m mini` keeps this to
+    # the fastest ~46-problem subset (~35s solve time) -- see README.md's
+    # Benchmarks section for the full/slower marks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y libblas-dev
+      - run: pip install -e .[test]
+      - run: python -m pytest tests/test_benchmarks.py -v -m mini

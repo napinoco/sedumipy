@@ -53,15 +53,20 @@ matches blksdp.h's, the memory layout matches what the C side expects.
 from __future__ import annotations
 
 import ctypes
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 _PKG_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _PKG_DIR.parent.parent
-_LIB_PATH = _PKG_DIR / (
-    "libsedumi.dylib" if sys.platform == "darwin" else "libsedumi.so"
-)
+if sys.platform == "darwin":
+    _LIB_PATH = _PKG_DIR / "libsedumi.dylib"
+elif sys.platform == "win32":
+    _LIB_PATH = _PKG_DIR / "libsedumi.dll"
+else:
+    _LIB_PATH = _PKG_DIR / "libsedumi.so"
 
 
 def _ensure_built() -> Path:
@@ -73,13 +78,89 @@ def _ensure_built() -> Path:
             f"{_LIB_PATH} not found and {build_script} is missing; "
             "cannot build libsedumi automatically."
         )
-    subprocess.run([str(build_script), str(_LIB_PATH)], check=True, cwd=_REPO_ROOT)
+    # tools/build_libsedumi.sh is a bash script; Windows has no shebang
+    # support, so it needs `bash` (an MSYS2 MinGW64 shell -- see
+    # CONTRIBUTING.md's Windows note) invoked explicitly -- and by its
+    # full path, not the bare name "bash": subprocess.run() on Windows
+    # goes through CreateProcess(), which searches the System32
+    # directory *before* PATH, and every Windows install since 10
+    # 1607 ships a `bash.exe` stub there that just prints "Windows
+    # Subsystem for Linux has no installed distributions" and exits
+    # nonzero -- it would silently shadow MSYS2's real bash.exe even
+    # with MSYS2 correctly first on PATH.
+    if sys.platform == "win32":
+        bash = shutil.which("bash")
+        if bash is None:
+            raise RuntimeError(
+                "libsedumi.dll is missing and has to be built, but no "
+                "`bash` was found on PATH.\n\n"
+                "Building on Windows needs an MSYS2 MinGW64 toolchain: "
+                "install MSYS2 from https://www.msys2.org/, run\n\n"
+                "    pacman -S mingw-w64-x86_64-gcc "
+                "mingw-w64-x86_64-openblas\n\n"
+                "in an MSYS2 MinGW64 shell, then add both "
+                "C:\\msys64\\usr\\bin and C:\\msys64\\mingw64\\bin to "
+                "PATH. MSVC will not work in its place -- the build is a "
+                "bash script, and libsedumi.dll is a plain ctypes-loaded "
+                "DLL rather than a CPython extension.\n\n"
+                "Full instructions: https://github.com/napinoco/sedumipy"
+                "/blob/main/docs/installation.rst"
+            )
+        command = [bash, str(build_script), str(_LIB_PATH)]
+    else:
+        command = [str(build_script), str(_LIB_PATH)]
+    subprocess.run(command, check=True, cwd=_REPO_ROOT)
     if not _LIB_PATH.exists():
         raise RuntimeError(f"build_libsedumi.sh ran but did not produce {_LIB_PATH}")
     return _LIB_PATH
 
 
-_lib = ctypes.CDLL(str(_ensure_built()))
+_built_lib_path = _ensure_built()
+
+if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+    # libsedumi.dll dynamically depends on libopenblas.dll (and a couple
+    # of mingw runtime DLLs). Python 3.8+ changed ctypes.CDLL()'s default
+    # search behavior on Windows to LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+    # which does NOT include the PATH environment variable -- only the
+    # loaded DLL's own directory, the application directory, System32,
+    # and directories explicitly registered via os.add_dll_directory().
+    # Confirmed the hard way: this used to just add _PKG_DIR (where a
+    # wheel's `delvewheel repair` bundles those DLLs alongside
+    # libsedumi.dll itself), on the assumption a dev/MSYS2 environment's
+    # own PATH would cover the rest -- it does not, and ctypes.CDLL()
+    # failed with "Could not find module ... or one of its dependencies"
+    # in a real dev-install CI run despite gcc/openblas being correctly
+    # on PATH.
+    #
+    # A first attempt registered *every* PATH directory instead -- that
+    # backfired: a failed module import is evicted from sys.modules, so
+    # pytest's importorskip() re-executes this file's whole module body
+    # (including this loop) on every one of the ~47 test files that
+    # import sedumipy, without ever calling os.remove_dll_directory().
+    # Windows' internal DLL search path table isn't unbounded, and dozens
+    # of PATH entries times dozens of retries overflowed it -- confirmed
+    # in CI: even the single, first, always-valid _PKG_DIR call itself
+    # started failing with "WinError 206: filename or extension is too
+    # long" (a real limit on the cumulative registered search path, not
+    # a literal complaint about that one short path).
+    #
+    # Target the toolchain directory directly instead, the same way
+    # tools/build_libsedumi.sh resolves it (MSYS2_ROOT, defaulting to the
+    # standard C:\msys64 install location) -- bounded to two directories
+    # regardless of how many times this module gets re-executed.
+    os.add_dll_directory(str(_PKG_DIR))
+    _msys2_root = os.environ.get("MSYS2_ROOT", r"C:\msys64")
+    for _candidate in (
+        os.path.join(_msys2_root, "mingw64", "bin"),
+        os.path.join(_msys2_root, "usr", "bin"),
+    ):
+        if os.path.isdir(_candidate):
+            try:
+                os.add_dll_directory(_candidate)
+            except OSError:
+                pass
+
+_lib = ctypes.CDLL(str(_built_lib_path))
 
 c_size_t_p = ctypes.POINTER(ctypes.c_size_t)
 c_double_p = ctypes.POINTER(ctypes.c_double)
@@ -2199,11 +2280,18 @@ def cone_from_dict(K: dict) -> ConeK:
 # down to the exact final size at the end -- it must therefore own a
 # buffer allocated via the C allocator family, NOT a numpy-owned buffer
 # (realloc()'ing memory numpy itself allocated would corrupt numpy's own
-# bookkeeping). _libc gives access to the process's already-linked
-# malloc/free (there is no separate libc to load on macOS/Linux -- CDLL(None)
-# resolves symbols already present in the process, which always includes
-# the C runtime).
-_libc = ctypes.CDLL(None)
+# bookkeeping), and freed with a calloc/free that shares the same heap
+# as whatever realloc() libsedumi's C code itself resolves to, or
+# free()'ing memory realloc() may have moved would corrupt the CRT's own
+# bookkeeping. On macOS/Linux, CDLL(None) resolves symbols already
+# linked into the process, which always includes the C runtime -- there
+# is no separate libc to load. Windows has no such "the process itself"
+# handle (ctypes.CDLL(None) raises TypeError there), and no single
+# universal CRT either; libsedumi.dll here is always built by MSYS2's
+# MINGW64 gcc (see tools/build_libsedumi.sh), which -- unlike UCRT64/
+# CLANG64 -- links the legacy msvcrt.dll, so loading that by name gets
+# the exact same heap its realloc() uses.
+_libc = ctypes.CDLL("msvcrt") if sys.platform == "win32" else ctypes.CDLL(None)
 _libc.calloc.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
 _libc.calloc.restype = ctypes.c_void_p
 _libc.free.argtypes = [ctypes.c_void_p]

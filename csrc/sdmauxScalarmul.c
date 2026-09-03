@@ -41,6 +41,7 @@
 void scalarmul(double *r, double alpha,const double *x,mwIndex n)
 {
     blasint one=1,nn=n;
+    SEDUMI_ASSERT_BLASINT_FITS(nn, n);
     FORT(dcopy)(&nn,(double*)x,&one,r,&one);
     FORT(dscal)(&nn,&alpha,r,&one);
 }
@@ -52,6 +53,7 @@ void scalarmul(double *r, double alpha,const double *x,mwIndex n)
 void addscalarmul(double *r, double alpha,const double *x,mwIndex n)
 {
     blasint one=1,nn=n;
+    SEDUMI_ASSERT_BLASINT_FITS(nn, n);
     FORT(daxpy)(&nn,&alpha,(double*)x,&one,r,&one);
 }
 
@@ -62,6 +64,7 @@ void addscalarmul(double *r, double alpha,const double *x,mwIndex n)
 void subscalarmul(double *x, double alpha, const double *y, mwIndex n)
 {
     blasint one=1,nn=n;
+    SEDUMI_ASSERT_BLASINT_FITS(nn, n);
     double minusalpha=-alpha;
     FORT(daxpy)(&nn,&minusalpha,(double*)y,&one,x,&one);
 }

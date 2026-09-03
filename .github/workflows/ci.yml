@@ -59,10 +59,15 @@ jobs:
       - name: Install BLAS
         run: |
           if [ "${{ matrix.blas }}" = "scipy-openblas64" ]; then
+            # setuptools explicitly: --no-build-isolation below means pip
+            # won't auto-install [build-system] requires (setuptools>=68)
+            # into an isolated env the way a normal build would, so it has
+            # to already be present -- omitting it fails the next step
+            # with "ModuleNotFoundError: No module named 'setuptools'".
             # Pinned, matching pyproject.toml's [tool.cibuildwheel]
             # before-build -- see its comment on why (and where else to
             # update this same version if it's ever deliberately bumped).
-            pip install scipy-openblas64==0.3.34.106.0
+            pip install setuptools scipy-openblas64==0.3.34.106.0
           else
             sudo apt-get update && sudo apt-get install -y ${{ matrix.blas }}
           fi

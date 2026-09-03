@@ -82,11 +82,15 @@ include = ["sedumipy*"]
 # project's declared build requirements, invisible to `import
 # scipy_openblas64` even though it's the same Python interpreter.
 # Skipping isolation makes cibuildwheel's own venv (where before-build
-# just installed it) the one setup.py actually runs in. Applied
-# globally (including to macOS, which doesn't need it) rather than only
-# where it matters, since it's harmless when unused and keeping one
-# build-frontend setting for all three platforms is simpler than a
-# macOS-specific override that would do nothing different.
+# just installed it) the one setup.py actually runs in. macOS overrides
+# this back to normal isolation below (see [tool.cibuildwheel.macos]) --
+# it is NOT harmless to leave on there: --no-build-isolation also means
+# pip won't auto-install this project's own [build-system] requires
+# (setuptools>=68) into an isolated env, so without either build
+# isolation restored or setuptools installed by some other means, the
+# build fails outright with "ModuleNotFoundError: No module named
+# 'setuptools'" (confirmed the hard way in CI once before-build stopped
+# installing anything on macOS).
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"
 skip = "*-musllinux_* *_i686 *-win32 *-win_arm64"
@@ -117,6 +121,15 @@ manylinux-x86_64-image = "manylinux_2_28"
 # a false impression from reading before-build alone that macOS uses it
 # too. "true" is a plain no-op shell command, not a typo.
 before-build = "true"
+# Also overrides build-frontend back to plain isolated pip (dropping the
+# global --no-build-isolation): macOS has nothing for that flag to
+# preserve visibility of (no scipy-openblas64 import to protect, per
+# above), and a normal isolated build installs this project's own
+# [build-system] requires (setuptools>=68) automatically -- which
+# before-build no longer does now that it's a no-op. Skipping this
+# override left setuptools missing entirely and the build failing with
+# "ModuleNotFoundError: No module named 'setuptools'" (confirmed in CI).
+build-frontend = "default"
 # No repair-wheel-command override needed: delocate (cibuildwheel's
 # macOS default) has nothing to vendor here, same as before this switch
 # -- Accelerate is a system framework, not a bundled shared library.

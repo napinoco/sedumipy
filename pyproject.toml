@@ -54,6 +54,19 @@ include = ["sedumipy*"]
 # platform below, so `before-build` is the same one-line install on all
 # three rather than three different system-package recipes.
 #
+# Pinned to an exact version in the `before-build` lines below, not
+# left floating: this project's own code computes the mangled BLAS symbol
+# names and blasint width from scipy-openblas64's pkg-config metadata
+# (see tools/build_libsedumi.sh/csrc/sedumi_platform.h) rather than
+# hardcoding them, but an unpinned `pip install` would still let a
+# future scipy-openblas64 release change that metadata's shape (or drop
+# ILP64, or something else entirely) and silently break every build
+# until noticed. Bumping it is a deliberate, tested action -- update
+# this same string in .github/workflows/ci.yml, README.md,
+# CONTRIBUTING.md and docs/installation.rst together, then re-run the
+# full test suite and the SDPLIB/DIMACS mini benchmarks against it
+# before pushing.
+#
 # --no-build-isolation is required for that: scipy-openblas64 is not
 # declared in this project's own [build-system] requires (deliberately
 # -- it isn't available for every platform `pip install` could target,
@@ -69,7 +82,7 @@ include = ["sedumipy*"]
 build = "cp310-* cp311-* cp312-* cp313-*"
 skip = "*-musllinux_* *_i686 *-win32 *-win_arm64"
 build-frontend = { name = "pip", args = ["--no-build-isolation"] }
-before-build = "pip install setuptools scipy-openblas64"
+before-build = "pip install setuptools scipy-openblas64==0.3.34.106.0"
 test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0\""
 
 [tool.cibuildwheel.linux]
@@ -104,5 +117,5 @@ manylinux-x86_64-image = "manylinux_2_28"
 # Windows. tools/repair_windows_wheel.py exists only because the
 # scipy-openblas64 DLL's directory (a site-packages path inside this
 # venv) has to be resolved in Python at repair time, not hardcoded here.
-before-build = "pip install setuptools delvewheel scipy-openblas64"
+before-build = "pip install setuptools delvewheel scipy-openblas64==0.3.34.106.0"
 repair-wheel-command = "python tools/repair_windows_wheel.py {wheel} {dest_dir}"

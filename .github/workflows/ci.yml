@@ -59,7 +59,10 @@ jobs:
       - name: Install BLAS
         run: |
           if [ "${{ matrix.blas }}" = "scipy-openblas64" ]; then
-            pip install scipy-openblas64
+            # Pinned, matching pyproject.toml's [tool.cibuildwheel]
+            # before-build -- see its comment on why (and where else to
+            # update this same version if it's ever deliberately bumped).
+            pip install scipy-openblas64==0.3.34.106.0
           else
             sudo apt-get update && sudo apt-get install -y ${{ matrix.blas }}
           fi

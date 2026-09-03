@@ -94,10 +94,12 @@ first — see the Windows note in
 [`docs/installation.rst`](docs/installation.rst) or
 [`CONTRIBUTING.md`](CONTRIBUTING.md)); it's then built automatically the
 first time `sedumipy` is imported, via `tools/build_libsedumi.sh`. It
-also needs a BLAS: run `pip install scipy-openblas64` (a
+also needs a BLAS: run `pip install scipy-openblas64==0.3.34.106.0` (a
 pip-installable, prebuilt BLAS with wheels for Linux/macOS/Windows —
-the same one the published wheels themselves link) before `pip install
--e .[test] --no-build-isolation` above, or skip that and it falls back
+the same, version-pinned one the published wheels themselves link, see
+`pyproject.toml`'s `[tool.cibuildwheel]` comment for why it's pinned)
+before `pip install -e .[test] --no-build-isolation` above, or skip
+that and it falls back
 to a system BLAS per OS instead (e.g. `apt install libopenblas-dev` on
 Linux, or nothing extra on macOS/Accelerate) — see
 [`docs/installation.rst`](docs/installation.rst) for the full story.

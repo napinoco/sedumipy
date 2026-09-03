@@ -44,16 +44,18 @@ because ``pip`` fell back to the source distribution as described above.
 
 * A BLAS, either of:
 
-  * **Recommended, same on every OS**: ``pip install scipy-openblas64``
-    into the environment you're installing sedumipy into, *before*
-    running ``pip install -e .`` -- and pass
-    ``--no-build-isolation`` to that install, since scipy-openblas64
-    isn't declared as one of this project's own build requirements (see
-    ``pyproject.toml``'s ``[tool.cibuildwheel]`` comment for why) and a
-    normal isolated build wouldn't see it otherwise. This is what the
-    published wheels themselves link, so it exercises the exact same
-    code path as a wheel install and needs nothing beyond ``pip``, on
-    Linux, macOS or Windows alike.
+  * **Recommended, same on every OS**: ``pip install
+    scipy-openblas64==0.3.34.106.0`` into the environment you're
+    installing sedumipy into, *before* running ``pip install -e .`` --
+    and pass ``--no-build-isolation`` to that install, since
+    scipy-openblas64 isn't declared as one of this project's own build
+    requirements (see ``pyproject.toml``'s ``[tool.cibuildwheel]``
+    comment for why) and a normal isolated build wouldn't see it
+    otherwise. This is what the published wheels themselves link, so it
+    exercises the exact same code path as a wheel install and needs
+    nothing beyond ``pip``, on Linux, macOS or Windows alike. Pinned to
+    an exact version deliberately -- see ``pyproject.toml``'s comment on
+    why and where else to update it if you ever bump it.
   * **Fallback, no network access needed** (used automatically when
     scipy-openblas64 isn't importable by the Python running the build):
     a system BLAS per OS, exactly as before -- **Linux**: a BLAS
@@ -84,7 +86,7 @@ build against scipy-openblas64 instead (recommended -- see
 
 .. code-block:: sh
 
-   .venv/bin/pip install scipy-openblas64
+   .venv/bin/pip install scipy-openblas64==0.3.34.106.0
    .venv/bin/pip install -e .[test] --no-build-isolation
 
 If you already cloned without ``--recurse-submodules``, run

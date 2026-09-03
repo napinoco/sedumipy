@@ -17,12 +17,17 @@
 `libsedumi.so` をビルドするため(`_native.py`の`_ensure_built()`)、
 Cコンパイラ(`gcc`)が事前に入っている必要があります(Debian/Ubuntuなら
 `apt install build-essential`)。BLASについては、`pip install
-scipy-openblas64` を先に実行してから `pip install -e .[test]
---no-build-isolation` すると、公開wheelが実際にリンクしているのと
-同じ、pipだけで入る事前ビルド済みILP64 OpenBLAS
+scipy-openblas64==0.3.34.106.0` を先に実行してから `pip install -e
+.[test] --no-build-isolation` すると、公開wheelが実際にリンクしている
+のと同じ、pipだけで入る事前ビルド済みILP64 OpenBLAS
 (`scipy-openblas64`)を使う(`tools/build_libsedumi.sh`が
 importできるかを見て自動選択、詳細は同ファイルと
-`csrc/sedumi_platform.h`の`SEDUMI_BLAS_ILP64`参照)。それをしなければ
+`csrc/sedumi_platform.h`の`SEDUMI_BLAS_ILP64`参照)。バージョンを
+固定しているのは意図的(破壊的変更でビルドが突然壊れるのを防ぐため)
+なので、上げるときは`pyproject.toml`のコメントにある通り
+`.github/workflows/ci.yml`/`README.md`/`docs/installation.rst`の
+同じ文字列も揃えて更新し、テストとベンチマークを再実行すること。
+それをしなければ
 OS別のシステムBLASにフォールバックする(Linuxなら`libblas`/
 `libopenblas`開発ヘッダー、例えば`apt install libopenblas-dev`。LAPACK
 は実際には未使用 -- BLASのみでリンクしている)。素のコンテナ/CI環境

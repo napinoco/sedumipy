@@ -14,8 +14,9 @@ full phase-by-phase status and history).
   solver driver, to pure Python (NumPy/SciPy) plus a standalone C kernel
   library (`libsedumi.so`/`.dylib`, no MATLAB/Octave/MEX dependency),
   loaded via `ctypes`. LP, second-order-cone (SOCP), and semidefinite
-  (SDP, `K.s`) problems are in scope and verified bit-for-bit against
-  real Octave/SeDuMi output, including on published
+  (SDP, `K.s`) problems are in scope and verified against
+  real Octave/SeDuMi output (to tight numerical tolerances -- see
+  `docs/status.rst`), including on published
   [SDPLIB](https://github.com/vsdp/SDPLIB) and
   [DIMACS](https://github.com/vsdp/DIMACS) benchmark problems. Dense-
   column preconditioning is implemented.
@@ -24,7 +25,11 @@ full phase-by-phase status and history).
 - Sphinx documentation (`docs/`), published to GitHub Pages.
 - CI (`.github/workflows/ci.yml`): the test suite (Octave-generated
   oracle fixtures, no Octave needed to run it) plus the fastest SDPLIB/
-  DIMACS benchmark subset, both on every push/PR, on Linux and Windows.
+  DIMACS benchmark subset, both on every push/PR, on Linux, macOS and
+  Windows. The BLAS implementation is the axis that actually matters for
+  these numerical comparisons, so the suite runs against four of them:
+  reference Netlib and OpenBLAS on Linux, OpenBLAS on Windows, and
+  Accelerate on macOS.
 - Wheel builds via cibuildwheel (`.github/workflows/wheels.yml`) for
   Linux (manylinux), macOS, and Windows (MSYS2/MinGW toolchain,
   `delvewheel`-repaired); not yet published to PyPI.

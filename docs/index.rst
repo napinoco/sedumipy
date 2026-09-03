@@ -36,7 +36,7 @@ signature and semantics -- see :doc:`usage` for the problem format (the
 Project status
 --------------
 
-LP and SOCP problems are fully ported and verified bit-for-bit against
+LP and SOCP problems are fully ported and verified against
 real Octave/SeDuMi output; PSD (``K.s``) cones are also implemented and
 verified against real reference solves. See :doc:`status` for the current
 scope and :doc:`contributing` for the full phase-by-phase project history.

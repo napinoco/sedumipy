@@ -35,9 +35,20 @@ MATLAB/Octave-free C library + Python package. As of this writing:
 
 **Scope.** LP, second-order cone (SOCP, ``K.q``/``K.r``), and
 semidefinite (SDP, ``K.s``) problems are fully ported and verified
-bit-for-bit against real Octave/SeDuMi output on both synthetic fixtures
+against real Octave/SeDuMi output on both synthetic fixtures
 and published SDPLIB/DIMACS benchmark problems (:doc:`usage`'s
 Benchmarks section). Dense-column preconditioning is implemented.
+
+The test suite compares against Octave-generated oracle fixtures with
+``numpy.testing.assert_allclose`` -- ``rtol`` between 1e-12 and 1e-10 for
+the individual C kernels, and 1e-5 for whole end-to-end solves, where the
+interior-point iteration accumulates rounding. Integer-valued results
+(orderings, permutations, sparsity patterns) are compared exactly. Several
+individual kernels were confirmed bit-identical to the MEX build during
+development -- see ``CONTRIBUTING.md`` -- but that is a development
+observation, not what CI asserts: the tolerances above are what has to
+hold across the three BLAS implementations CI covers (reference Netlib and
+OpenBLAS on Linux, OpenBLAS on Windows, Accelerate on macOS).
 
 **Not ported** (deliberately out of scope, no effect on the returned
 ``(x, y, info)``): the console progress printout, ``pars.vplot``'s

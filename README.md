@@ -29,8 +29,9 @@ work. (It's in Japanese; ask if you'd like an English translation.)
 ## Status
 
 LP, second-order-cone (SOCP), and semidefinite (SDP, `K.s`) problems are
-all fully ported and verified bit-for-bit against real Octave/SeDuMi
-output, including on published [SDPLIB](https://github.com/vsdp/SDPLIB)
+all fully ported and verified against real Octave/SeDuMi output, to tight
+numerical tolerances, including on published
+[SDPLIB](https://github.com/vsdp/SDPLIB)
 and [DIMACS](https://github.com/vsdp/DIMACS) benchmark problems (see
 [Benchmarks](#benchmarks) below). Dense-column preconditioning is also
 implemented. `pip`-installable wheels build for Linux (manylinux), macOS,

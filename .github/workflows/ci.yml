@@ -22,13 +22,54 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.13"]
+        # Two axes that matter for different reasons, so they are listed
+        # as explicit combinations rather than multiplied out: the Python
+        # version exercises the pure-Python layer (platform- and
+        # BLAS-independent), while the BLAS implementation exercises
+        # libsedumi.so's numerics (Python-version-independent).
+        #
+        # libblas-dev is the reference Netlib implementation;
+        # libopenblas-dev is what most real Linux users actually have
+        # installed, and Debian/Ubuntu's update-alternatives makes
+        # `-lblas` resolve to it transparently, so tools/build_libsedumi.sh
+        # needs no change. A different BLAS means different blocking/SIMD/
+        # FMA and therefore different rounding, which is exactly what the
+        # oracle comparisons' rtol/atol have to absorb -- see the macOS
+        # (Accelerate) job below.
+        include:
+          - python-version: "3.10"
+            blas: libblas-dev
+          - python-version: "3.13"
+            blas: libblas-dev
+          - python-version: "3.13"
+            blas: libopenblas-dev
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: sudo apt-get update && sudo apt-get install -y libblas-dev
+      - run: sudo apt-get update && sudo apt-get install -y ${{ matrix.blas }}
+      - run: pip install -e .[test]
+      - run: python -m pytest tests/ -q
+
+  test-macos:
+    # Separate from the `test` matrix above: nothing to install (the
+    # Darwin branch of tools/build_libsedumi.sh links the system
+    # Accelerate framework, which every Mac ships), and no apt-get to
+    # install it with anyway.
+    #
+    # This is the only job that runs the real test suite against
+    # Accelerate -- Apple's own BLAS, the most divergent of the three
+    # implementations CI covers. wheels.yml's macOS job is not a
+    # substitute: its test-command solves a single 2x2 LP, which never
+    # reaches the sparse Cholesky, dense-column preconditioning or PSD
+    # cone paths where a BLAS difference would actually surface.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: pip install -e .[test]
       - run: python -m pytest tests/ -q
 

@@ -31,8 +31,15 @@ full phase-by-phase status and history).
   reference Netlib and OpenBLAS on Linux, OpenBLAS on Windows, and
   Accelerate on macOS.
 - Wheel builds via cibuildwheel (`.github/workflows/wheels.yml`) for
-  Linux (manylinux), macOS, and Windows (MSYS2/MinGW toolchain,
-  `delvewheel`-repaired); not yet published to PyPI.
+  Linux (manylinux), macOS, and Windows (MSYS2/MinGW toolchain); not yet
+  published to PyPI. Each wheel carries whatever BLAS it needs, by a
+  different route per platform: `auditwheel` vendors `libblas`/
+  `libopenblas` into `sedumipy.libs/` on Linux, `delvewheel repair
+  --analyze-existing` vendors `libopenblas.dll` and the mingw runtime
+  DLLs on Windows, and macOS needs no vendoring at all because
+  Accelerate is a system framework. The wheel jobs print each repaired
+  wheel's bundled libraries so this stays verifiable rather than
+  assumed.
 - Windows support: `tools/build_libsedumi.sh` now builds
   `libsedumi.dll` via an MSYS2 MinGW64 toolchain
   (`mingw-w64-x86_64-gcc`/`-openblas`) instead of requiring MSVC --
@@ -46,11 +53,3 @@ full phase-by-phase status and history).
 - Complex Hermitian PSD problems (`K.scomplex`/`K.ycomplex`) are out of
   scope.
 - Not yet published to PyPI.
-- The wheel jobs do run the standard repair step on every platform
-  (cibuildwheel's built-in `auditwheel repair` on Linux, which retags
-  the wheels `manylinux_2_28_x86_64`; `delvewheel repair
-  --analyze-existing` on Windows), but only the Windows wheel has been
-  confirmed to actually vendor its BLAS: `auditwheel` reported nothing
-  to graft into the Linux wheels, which has not yet been chased down.
-  Until it is, treat the Linux wheels as possibly still depending on
-  the build host's `libblas`.

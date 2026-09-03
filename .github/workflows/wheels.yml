@@ -41,6 +41,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pypa/cibuildwheel@v2.21
+      - name: Show what each repaired wheel bundles
+        shell: bash
+        run: bash tools/show_wheel_libs.sh wheelhouse/*.whl
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}
@@ -118,6 +121,9 @@ jobs:
           echo "C:\toolchain-mingw64\mingw64\bin" >> "$GITHUB_PATH"
           echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
       - uses: pypa/cibuildwheel@v2.21
+      - name: Show what each repaired wheel bundles
+        shell: bash
+        run: bash tools/show_wheel_libs.sh wheelhouse/*.whl
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-latest

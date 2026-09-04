@@ -83,13 +83,37 @@ order, each block occupying that many consecutive entries -- except an
 its matrix is stored flattened column-major (see step 2 of the worked
 example below).
 
+A pure-LP problem needs only ``K.l``. For
+
+.. math::
+
+   \min_x\ 7x_1 + 4x_2 + 10x_3 \quad \text{such that}\quad
+   \begin{aligned}
+   3x_1 + x_2 + 2x_3 &= 9, \\
+   x_1 + 2x_2 + 4x_3 &= 8,
+   \end{aligned}
+   \quad x_1, x_2, x_3 \ge 0
+
+the objective coefficients are ``c``, the two constraint rows are ``A``,
+their right-hand sides are ``b``, and ``K`` says all three variables are
+nonnegative:
+
 .. code-block:: python
 
    import numpy as np
    import sedumipy
 
-   # LP: minimize x1 + x2 s.t. x1 = x2 = 1, x >= 0
-   x, y, info = sedumipy.sedumi(np.eye(2), np.array([1.0, 1.0]), np.array([1.0, 1.0]), {"l": 2})
+   A = np.array([[3.0, 1.0, 2.0],
+                 [1.0, 2.0, 4.0]])
+   b = np.array([9.0, 8.0])
+   c = np.array([7.0, 4.0, 10.0])
+
+   x, y, info = sedumipy.sedumi(A, b, c, {"l": 3})
+
+Here ``x = [2, 3, 0]`` and ``y = [2, 1]``, the optima of (P) and (D)
+respectively: both objectives agree at ``c @ x == b @ y == 26``, and the
+dual slack ``c - A.T @ y == [0, 0, 2]`` is zero exactly where ``x`` is
+positive.
 
 Worked example: turning a written model into ``A``, ``b``, ``c``, ``K``
 ------------------------------------------------------------------------

@@ -15,8 +15,18 @@ to install or run it.
 import numpy as np
 import sedumipy
 
-# minimize x1 + x2  s.t.  x1 = x2 = 1,  x >= 0
-x, y, info = sedumipy.sedumi(np.eye(2), np.array([1.0, 1.0]), np.array([1.0, 1.0]), {"l": 2})
+# minimize    7*x1 + 4*x2 + 10*x3
+# subject to  3*x1 + 1*x2 +  2*x3 = 9
+#             1*x1 + 2*x2 +  4*x3 = 8
+#             x1, x2, x3 >= 0
+A = np.array([[3.0, 1.0, 2.0],      # one row per equality constraint
+              [1.0, 2.0, 4.0]])
+b = np.array([9.0, 8.0])            # their right-hand sides
+c = np.array([7.0, 4.0, 10.0])      # objective coefficients
+K = {"l": 3}                        # all 3 variables are >= 0
+
+x, y, info = sedumipy.sedumi(A, b, c, K)
+# x = [2., 3., 0.]   the optimum, costing c @ x = 26
 ```
 
 This mirrors real SeDuMi's own `[x, y, info] = sedumi(A, b, c, K)` call:

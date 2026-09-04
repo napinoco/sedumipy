@@ -7,20 +7,39 @@ sedumipy
 standalone C library plus a Python (NumPy/SciPy) package. No MATLAB or
 GNU Octave runtime is required.
 
+To solve, say,
+
+.. math::
+
+   \min_x\ 7x_1 + 4x_2 + 10x_3 \quad \text{such that}\quad
+   \begin{aligned}
+   3x_1 + x_2 + 2x_3 &= 9, \\
+   x_1 + 2x_2 + 4x_3 &= 8,
+   \end{aligned}
+   \quad x_1, x_2, x_3 \ge 0
+
+feed the objective coefficients as ``c``, the constraint rows as ``A``,
+their right-hand sides as ``b``, and say that all three variables are
+nonnegative with ``K``:
+
 .. code-block:: python
 
    import numpy as np
    import sedumipy
 
-   # minimize c'x s.t. Ax = b, x >= 0
-   A = np.eye(2)
-   b = np.array([1.0, 1.0])
-   c = np.array([1.0, 1.0])
-   x, y, info = sedumipy.sedumi(A, b, c, {"l": 2})
+   A = np.array([[3.0, 1.0, 2.0],      # one row per equality constraint
+                 [1.0, 2.0, 4.0]])
+   b = np.array([9.0, 8.0])            # their right-hand sides
+   c = np.array([7.0, 4.0, 10.0])      # objective coefficients
+   K = {"l": 3}                        # all 3 variables are >= 0
+
+   x, y, info = sedumipy.sedumi(A, b, c, K)
+   # x = [2., 3., 0.]   the optimum, costing c @ x = 26
 
 This mirrors real SeDuMi's own ``[x, y, info] = sedumi(A, b, c, K)`` call
 signature and semantics -- see :doc:`usage` for the problem format (the
-``K`` cone-structure dict) and :doc:`api` for the full public API.
+``K`` cone-structure dict, and how to mix LP, second-order-cone, and PSD
+blocks in one problem) and :doc:`api` for the full public API.
 
 .. toctree::
    :maxdepth: 2

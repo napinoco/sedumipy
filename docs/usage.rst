@@ -119,11 +119,16 @@ against a from-source build of the real Octave/MEX SeDuMi**
 solving all 105 problems ``tests/test_benchmarks.py`` covers (both
 solvable and infeasible SDPLIB/DIMACS/TORUS instances), measured
 2026-09-04 on Octave 8.4.0 / a 4-core Linux container. **Absolute
-numbers are environment-dependent** (CPU/core count/thermal state --
-back-to-back runs in this same environment varied by up to ~25% on the
-largest problems), so treat the ratio column as indicative, not a tight
-bound; see :doc:`contributing` (DEVLOG's Phase 5 entry) for an earlier,
-5-problem version of this same comparison.
+numbers are environment-dependent** (CPU/core count/thermal state) --
+an earlier pass in this same environment, with the two suites run under
+different background load (Octave/MEX measured right after a heavy
+``mkoctfile`` rebuild, Python measured on an otherwise-idle machine),
+showed Octave/MEX ~22% faster in aggregate purely from that noise. The
+numbers below are from both suites run **back-to-back on an otherwise-
+idle machine** (Python immediately followed by Octave/MEX, no rebuild or
+install in between) to remove that skew; treat the ratio column as
+indicative, not a tight bound. See :doc:`contributing` (DEVLOG's Phase 5
+entry) for an earlier, 5-problem version of this same comparison.
 
 **Timing, by problem size** (bucketed by the real Octave/MEX solve time):
 
@@ -136,32 +141,36 @@ bound; see :doc:`contributing` (DEVLOG's Phase 5 entry) for an earlier,
      - Octave/MEX total
      - Ratio (Python / Octave)
    * - < 2 s
-     - 59
-     - 62.7 s
-     - 41.8 s
-     - 1.50
+     - 61
+     - 51.1 s
+     - 44.5 s
+     - 1.15
    * - 2-20 s
-     - 38
-     - 373.0 s
-     - 321.1 s
-     - 1.16
+     - 34
+     - 261.1 s
+     - 278.1 s
+     - 0.94
    * - 20 s+
-     - 8
-     - 547.5 s
-     - 442.4 s
-     - 1.24
+     - 10
+     - 501.4 s
+     - 478.3 s
+     - 1.05
    * - **All 105**
      - 105
-     - **983.1 s**
-     - **805.3 s**
-     - **1.22**
+     - **813.6 s**
+     - **800.9 s**
+     - **1.02**
 
-Small problems (Python interpreter/NumPy-allocation/ctypes-crossing
-overhead per iteration) still show this port running visibly slower, as
-in the 5-problem Phase 5 measurement; on larger problems, where the
-native C-kernel Cholesky factorization dominates total time, the two are
-much closer (within ~20-25%, the same order as this environment's own
-run-to-run noise).
+Under matched conditions, this port and real Octave/MEX SeDuMi run
+**within a few percent of each other in aggregate** -- close enough that
+the remaining gap is within this environment's own run-to-run noise, not
+a clear, reproducible slowdown in either direction. Individual problems
+still vary more (see the full table below): DIMACS's small ANTENNA-family
+SOCP problems (``nb``, ``nb_L2``, ``nql30old``, ...) consistently show
+this port running 2-3x slower, plausibly Python interpreter/NumPy-
+allocation/ctypes-crossing overhead dominating on problems this small,
+while several others (``qssp30``, ``hinf13``, ``truss6``, ...) run faster
+than real Octave/MEX -- see the ``ratio_py_over_oct`` column.
 
 **Optimal value (pobj) agreement.** Both solvers' final primal objective
 values, formatted in scientific notation to the same number of

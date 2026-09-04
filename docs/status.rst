@@ -45,7 +45,7 @@ the individual C kernels, and 1e-5 for whole end-to-end solves, where the
 interior-point iteration accumulates rounding. Integer-valued results
 (orderings, permutations, sparsity patterns) are compared exactly. Several
 individual kernels were confirmed bit-identical to the MEX build during
-development -- see ``CONTRIBUTING.md`` -- but that is a development
+development -- see ``DEVLOG.md`` -- but that is a development
 observation, not what CI asserts: the tolerances above are what has to
 hold across the four BLAS implementations CI covers (reference Netlib,
 OpenBLAS, and scipy-openblas64 -- a pip-installable, prebuilt ILP64
@@ -88,6 +88,8 @@ had the other two's build/install problem for scipy-openblas64 to solve
 
 Not yet done: publishing to PyPI.
 
-For the full phase-by-phase history, the porting workflow, known bugs
-found and fixed along the way, and the prioritized list of remaining
-work, see :doc:`contributing`.
+For the full phase-by-phase history and the porting workflow, see
+:doc:`contributing`. For known bugs found and fixed along the way and
+the session-by-session history of how this status was reached, see
+`DEVLOG.md
+<https://github.com/napinoco/sedumipy/blob/main/DEVLOG.md>`_.

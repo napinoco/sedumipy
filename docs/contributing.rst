@@ -6,11 +6,11 @@ New contributor? Read `CONTRIBUTING.md
 repository root first. It has the current phase-by-phase status, the
 porting workflow this project follows (how a single ``.m`` file gets
 ported and verified against a real Octave oracle), known scope
-limitations, coding/naming conventions, and the prioritized list of
-remaining work.
-
-It is written in Japanese; ask in an issue if an English translation
-would help.
+limitations, and coding/naming conventions. The detailed, session-by-
+session history of bugs found and fixed during porting -- and how
+packaging/benchmarking/performance work actually got done -- lives
+separately in `DEVLOG.md
+<https://github.com/napinoco/sedumipy/blob/main/DEVLOG.md>`_.
 
 Development setup
 ------------------
@@ -26,7 +26,7 @@ Development setup
 Regenerating oracle fixtures (only needed when changing what a module is
 checked against, not for routine development) requires a real Octave
 build of upstream SeDuMi under ``vendor/sedumi-upstream/`` -- see
-``CONTRIBUTING.md`` section 8.
+``CONTRIBUTING.md`` section 6.
 
 Building the documentation
 ----------------------------

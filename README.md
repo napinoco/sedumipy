@@ -24,7 +24,7 @@ This mirrors real SeDuMi's own `[x, y, info] = sedumi(A, b, c, K)` call.
 **New contributor?** Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first — it
 has the current phase-by-phase status, the porting workflow this project
 follows, known scope limitations, and the prioritized list of remaining
-work. (It's in Japanese; ask if you'd like an English translation.)
+work.
 
 ## Status
 
@@ -131,6 +131,28 @@ git submodule update --init --recursive   # if not already done
 Problems are grouped by `pytest.mark.mini` (<2s each) / `timing` (2-20s)
 / `extended` (20s-130s) by measured solve time -- see the module's own
 docstring for the sign conventions each collection/family needs.
+
+## A note on citation and attribution
+
+sedumipy is an independent, unofficial re-implementation of SeDuMi, created
+without involvement from the original SeDuMi authors or maintainers.
+Although it aims to reproduce SeDuMi's numerical behavior faithfully, it is
+a from-scratch port and may differ from the original in ways not yet
+identified — in short, **it may not always behave identically to real
+SeDuMi.**
+
+If you use this software in research, please cite the original SeDuMi
+paper to give credit where it is due:
+
+> Sturm, J.F. (1999). Using SeDuMi 1.02, a MATLAB toolbox for optimization
+> over symmetric cones. *Optimization Methods and Software*, 11(1-4),
+> 625-653.
+
+At the same time, please make clear in your own work that results were
+produced using **sedumipy, an unofficial Python port** — not the original
+SeDuMi. Any discrepancy, bug, or unexpected numerical behavior you observe
+here is a property of this port, not of SeDuMi itself, and should not be
+attributed to the original project or its authors.
 
 ## License
 

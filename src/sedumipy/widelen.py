@@ -4,7 +4,7 @@ search only when it pays off (final rate at most twice the best
 possible, step length at least half the best possible).
 
 KNOWN UPSTREAM BUG NOT REPLICATED: widelen.m computes the Lorentz-block
-eigenvalue term as
+eigenvalue term as::
 
     tmp = halfxz.^2 - detxz;
     if all(tmp > 0)          % <- one global test for ALL blocks at once
@@ -24,7 +24,7 @@ structured problems whose Lorentz blocks are copies of one another).
 Upstream's `else` branch is a cheap safety net against handing sqrt() a
 negative argument, but it is applied all-or-nothing: a single block
 sitting on top of zero silently switches every other block onto the cruder
-`lab2q = halfxz` formula too. This port instead clamps per block:
+`lab2q = halfxz` formula too. This port instead clamps per block::
 
     lab2q = halfxz + sqrt(max(tmp, 0))
 

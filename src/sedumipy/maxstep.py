@@ -4,7 +4,7 @@ of the cone K along direction dx from point x.
 KNOWN UPSTREAM BUG NOT REPLICATED: maxstep.m guards its Lorentz square
 root with the same global all-or-nothing test widelen.m uses (see
 widelen.py's docstring), but with a fallback that is worse than
-widelen.m's cruder-formula one:
+widelen.m's cruder-formula one::
 
     norm2 = reltr.^2 - tdet(dx,K).*auxx.tdet;
     if all(norm2 > 0)
@@ -15,7 +15,7 @@ widelen.m's cruder-formula one:
 When the test fails, `norm2` is left *unrooted* and then subtracted from
 `reltr` anyway -- mixing a squared quantity into a linear one, for every
 block, not just the offending one. maxstep.m's own comment gives the
-identity that makes this a bug rather than a judgement call:
+identity that makes this a bug rather than a judgement call::
 
     (lab2-lab1)^2 = (tr y)^2 - 4 det y = [(x'Jdx)^2 - tdetx*tdetdx]/detx^2
 

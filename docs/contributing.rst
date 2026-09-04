@@ -9,9 +9,6 @@ ported and verified against a real Octave oracle), known scope
 limitations, coding/naming conventions, and the prioritized list of
 remaining work.
 
-It is written in Japanese; ask in an issue if an English translation
-would help.
-
 Development setup
 ------------------
 

@@ -24,7 +24,7 @@ This mirrors real SeDuMi's own `[x, y, info] = sedumi(A, b, c, K)` call.
 **New contributor?** Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first — it
 has the current phase-by-phase status, the porting workflow this project
 follows, known scope limitations, and the prioritized list of remaining
-work. (It's in Japanese; ask if you'd like an English translation.)
+work.
 
 ## Status
 

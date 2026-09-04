@@ -1,897 +1,996 @@
-# sedumipy 開発ガイド(作業方針)
+# sedumipy Development Guide (Working Notes)
 
-このドキュメントは、SeDuMi の MATLAB/Octave 非依存移植プロジェクトに
-新しく参加する人(人間・AIエージェント問わず)が迷わず作業を続けられる
-ようにするための引き継ぎ資料です。「何が終わっていて、何が残っていて、
-どういう手順・方針で進めてきたか」をまとめています。
+This document is a handoff resource for anyone new joining this project
+to port SeDuMi off MATLAB/Octave — human or AI agent alike — so they can
+keep working without getting lost. It summarizes what's done, what's
+left, and the procedures/policies followed so far.
 
-**リポジトリ構成について:** この移植作業はもともと `napinoco/sedumi`
-(`sqlp/sedumi` のフォーク)の `python_port/` ディレクトリ以下で、
-オリジナルのMATLAB/C実装と同居する形で進められていました。このリポジトリ
-(`sedumipy`)は、移植版に必要なコードだけを独立させたクリーンな移設先です。
-オリジナルの `.m`/MEX用 `.c` 一式は `vendor/sedumi-upstream/`(`sqlp/sedumi`
-の submodule、フォーク時点のコミットに固定)に参照用として残っており、
-オラクル再生成(Octave実機での比較用データ生成)はこのsubmoduleを使います。
+**On the repository layout:** this port originally lived under
+`python_port/` inside `napinoco/sedumi` (a fork of `sqlp/sedumi`),
+alongside the original MATLAB/C implementation. This repository
+(`sedumipy`) is a clean spin-off containing only the code the port
+needs. The original `.m`/MEX `.c` sources are kept for reference under
+`vendor/sedumi-upstream/` (a submodule of `sqlp/sedumi`, pinned to the
+commit the fork started from); oracle regeneration (producing comparison
+data on real Octave) uses this submodule.
 
-**開発環境の前提条件:** `pip install -e .[test]` は初回importで
-`libsedumi.so` をビルドするため(`_native.py`の`_ensure_built()`)、
-Cコンパイラ(`gcc`)が事前に入っている必要があります(Debian/Ubuntuなら
-`apt install build-essential`)。BLASについては、**macOSだけは常に
-システムのAccelerateフレームワークを使う**(インストール不要、
-`tools/build_libsedumi.sh`のDarwin分岐が無条件にそうする -- macOSは
-そもそもLinux/Windowsにあるような「BLASを自分で入れる/ビルドする」
-苦労が最初から無いので、scipy-openblas64を使うメリットが無く、
-Apple Silicon向けのAccelerateのチューニングを捨ててまで揃える理由も
-無いという判断)。Linux/Windowsでは、`pip install
-scipy-openblas64==0.3.34.106.0` を先に実行してから `pip install -e
-.[test] --no-build-isolation` すると、公開wheelが実際にリンクしている
-のと同じ、pipだけで入る事前ビルド済みILP64 OpenBLAS
-(`scipy-openblas64`)を使う(`tools/build_libsedumi.sh`が
-importできるかを見て自動選択、詳細は同ファイルと
-`csrc/sedumi_platform.h`の`SEDUMI_BLAS_ILP64`参照)。バージョンを
-固定しているのは意図的(破壊的変更でビルドが突然壊れるのを防ぐため)
-なので、上げるときは`pyproject.toml`のコメントにある通り
-`.github/workflows/ci.yml`/`README.md`/`docs/installation.rst`の
-同じ文字列も揃えて更新し、テストとベンチマークを再実行すること。
-それをしなければ
-Linux/Windowsそれぞれのシステムbuild BLASにフォールバックする
-(Linuxなら`libblas`/`libopenblas`開発ヘッダー、例えば`apt install
-libopenblas-dev`。LAPACKは実際には未使用 -- BLASのみでリンクしている)。
-素のコンテナ/CI環境ではどちらも入っておらずビルドが失敗することが
-あるので、新しい環境で最初にハマったらまずここを疑ってください。
-(`.github/workflows/ci.yml`がこの両方の経路を毎回実行して確認して
-います。)
+**Development environment prerequisites:** `pip install -e .[test]`
+builds `libsedumi.so` on first import (`_native.py`'s `_ensure_built()`),
+so a C compiler (`gcc`) must already be installed (`apt install
+build-essential` on Debian/Ubuntu). For BLAS: **macOS always uses the
+system Accelerate framework** (nothing to install — `tools/
+build_libsedumi.sh`'s Darwin branch does this unconditionally, since
+macOS never had Linux/Windows's "install/build your own BLAS" pain to
+begin with, so scipy-openblas64 buys nothing there, and there's no
+reason to give up Accelerate's Apple Silicon tuning just to match the
+other platforms). On Linux/Windows, running `pip install
+scipy-openblas64==0.3.34.106.0` before `pip install -e .[test]
+--no-build-isolation` uses the same pip-installable, prebuilt ILP64
+OpenBLAS (`scipy-openblas64`) that the published wheels themselves link
+(`tools/build_libsedumi.sh` auto-detects whether it's importable; see
+that file and `csrc/sedumi_platform.h`'s `SEDUMI_BLAS_ILP64` for
+details). The version is pinned deliberately (so a breaking change
+upstream doesn't suddenly break the build) — if you ever bump it, update
+the same string in `.github/workflows/ci.yml`/`README.md`/
+`docs/installation.rst` per the comment in `pyproject.toml`, and re-run
+the tests and benchmarks. Without that package, it falls back to each
+OS's system-build BLAS (on Linux, the `libblas`/`libopenblas` dev
+headers, e.g. `apt install libopenblas-dev`; LAPACK is actually unused —
+linking is BLAS-only). A bare container/CI environment may have neither
+installed, causing the build to fail — if you hit a wall in a new
+environment, suspect this first. (`.github/workflows/ci.yml` exercises
+both paths on every run.)
 
-**Windows開発環境について:** `tools/build_libsedumi.sh`はbashスクリプト
-なので、Windowsではそのまま実行できません(`setup.py`/`_native.py`は
-Windows(`sys.platform == "win32"`)のときだけ`bash tools/build_libsedumi.sh
-...`のように明示的に`bash`経由で呼び出します)。[MSYS2](https://www.msys2.org/)
-をインストールし、MINGW64シェルから
+**Windows development environment:** `tools/build_libsedumi.sh` is a
+bash script and can't be run directly on Windows (`setup.py`/
+`_native.py` explicitly invoke it via `bash tools/build_libsedumi.sh
+...` only on Windows (`sys.platform == "win32"`)). Install
+[MSYS2](https://www.msys2.org/), then from the MINGW64 shell run
 
 ```
 pacman -S mingw-w64-x86_64-gcc
 ```
 
-を実行して`bash`/`gcc`をWindowsのPATHに通した状態(`C:\msys64\mingw64\bin`
-と`C:\msys64\usr\bin`)にすれば、他OSと同じ手順でビルド・テストできます
-(BLASは上記の`scipy-openblas64`経路が使われる。使わない場合は
-`mingw-w64-x86_64-openblas`も追加でインストールする必要がある)。
-`libsedumi.dll`はBLASのDLLとmingwランタイムDLLに動的リンクされる
-(スタンドアロンのctypes向けDLLで、CPython拡張のようにコンパイラを
-合わせる必要はそもそもない)ため、配布可能なwheelにするには
-`delvewheel repair`でそれらを同梱する必要があります
-(`.github/workflows/wheels.yml`/`tools/repair_windows_wheel.py`/
-`pyproject.toml`の`[tool.cibuildwheel.windows]`参照)。実機Windows環境
-での動作確認はこのセッションではできていない(このリポジトリの開発は
-Linux上で行われている)ため、CIでの実行結果が実質的な検証です。
+to put `bash`/`gcc` on Windows's `PATH` (`C:\msys64\mingw64\bin` and
+`C:\msys64\usr\bin`); after that, building and testing follow the same
+steps as on other OSes (BLAS uses the `scipy-openblas64` path above; if
+you skip that, you'll also need to install
+`mingw-w64-x86_64-openblas`). `libsedumi.dll` is dynamically linked
+against the BLAS DLL and mingw runtime DLLs (it's a plain ctypes-loaded
+DLL, not a CPython extension, so it was never tied to a particular
+compiler), so producing a distributable wheel requires bundling those
+with `delvewheel repair` (see `.github/workflows/wheels.yml`/
+`tools/repair_windows_wheel.py`/`pyproject.toml`'s
+`[tool.cibuildwheel.windows]`). This session had no real Windows machine
+to verify behavior on (development on this repository happens on
+Linux), so CI's results are the practical verification.
 
-`tools/build_libsedumi.sh`のWindows分岐は`gcc`をPATH経由でもMSYS2の
-`/mingw64`という疑似パス経由でもなく、`C:\msys64\mingw64\bin\gcc.exe`
-という**Windowsスタイルの絶対パス**で直接呼びます(`MSYS2_ROOT`環境変数で
-上書き可能)。理由は2つ実機CIで確認済み: (1) GitHub Actions
-Windowsランナーには無関係な別のMinGWツールチェーンが`C:\mingw64`に
-プリインストールされており、素の`gcc`呼び出しはそちらを拾ってしまう
-(`-lopenblas`が無くリンクに失敗する)。(2) MSYS2自体の`/mingw64`という
-POSIX風マウントも、対話的/ログインシェルでない素の`bash script.sh`
-呼び出しでは解決されない(実際にCI上で`mingw-w64-x86_64-gcc`を直前に
-インストール済みの状態でも`/mingw64/bin/gcc.exe: No such file or
-directory`になることを確認済み)。
+`tools/build_libsedumi.sh`'s Windows branch calls `gcc` neither via
+`PATH` nor via MSYS2's `/mingw64` pseudo-path, but by a **Windows-style
+absolute path**, `C:\msys64\mingw64\bin\gcc.exe` (overridable via the
+`MSYS2_ROOT` environment variable). Two reasons, both confirmed on real
+CI: (1) GitHub Actions' Windows runner ships with an unrelated,
+pre-installed MinGW toolchain at `C:\mingw64`, and a bare `gcc` call
+picks that one up instead (link fails for lack of `-lopenblas`). (2)
+MSYS2's own POSIX-style `/mingw64` mount also doesn't resolve for a
+non-interactive/non-login `bash script.sh` invocation (confirmed on CI:
+even with `mingw-w64-x86_64-gcc` freshly installed, this produced
+`/mingw64/bin/gcc.exe: No such file or directory`).
 
-## 1. プロジェクトのゴール
+## 1. Project goal
 
-SeDuMi(MATLAB/Octave 上で動く SDP/SOCP 用の内点法ソルバー、`.m` ファイル
-約96個 + MEX用 `.c` ファイル約54個)を、**MATLAB にも Octave にも一切
-依存しない**形に移植する。採用したアーキテクチャ(過去のセッションで
-決定済み、"Option B"):
+Port SeDuMi (an interior-point solver for SDP/SOCP problems that runs on
+MATLAB/Octave — roughly 96 `.m` files plus about 54 MEX `.c` files) to a
+form with **zero dependency on either MATLAB or Octave**. Architecture
+adopted (decided in an earlier session, "Option B"):
 
-- アルゴリズム本体(内点法の反復ロジック)→ **Python (NumPy/SciPy)**
-- 性能が重要な低レベルカーネル(Cholesky分解、コーン演算など)→
-  既存の `.c` ファイルを MEX 依存を取り除いて**独立 C ライブラリ**
-  (`libsedumi.so`)としてビルドし、**ctypes** 経由で Python から呼ぶ
+- The algorithm itself (interior-point iteration logic) → **Python
+  (NumPy/SciPy)**
+- Performance-critical low-level kernels (Cholesky factorization, cone
+  arithmetic, etc.) → build the existing `.c` files with their MEX
+  dependency stripped out as a **standalone C library**
+  (`libsedumi.so`), called from Python via **ctypes**
 
-最終的には `pip install` できる、MATLAB/Octave 不要の Python パッケージ
-にすることが目標。
+The end goal is a `pip install`-able Python package with no
+MATLAB/Octave dependency.
 
-## 2. 全体のフェーズと現在の進捗
+## 2. Overall phases and current progress
 
-タスク管理ツール(TaskList)にフェーズごとのタスクが登録されている。
-2026-08-31 時点の状況:
+Per-phase tasks are tracked in the task-management tool (TaskList). As
+of 2026-08-31:
 
-| フェーズ | 内容 | 状態 |
+| Phase | What | Status |
 |---|---|---|
-| Phase 0 | 検証基盤(Octave実機でgolden reference取得) | **完了** |
-| Phase 1 | Cカーネルのmex依存除去→独立Cライブラリ化 | **完了** |
-| Phase 2 | Pythonバインディング(ctypes)構築 (クラスタ1〜5) | **完了** |
-| Phase 3-a | 薄いMEXラッパー`.m`をPython APIとして整備 | **完了** |
-| Phase 3-b | コーン数学ユーティリティ(eigK, psdeig, psdscale等)移植 | **完了** |
-| Phase 3-c | 内点法の反復制御ロジック(sdinit〜optstep)移植 | **完了** |
-| Phase 3-d | `sedumi.m`本体の移植 + golden referenceでの全体検証 | **完了(LP+SOCP+PSDスコープ)** |
-| Phase 4 | 高レベルAPI・入出力互換層(.mat/SDPA)の実装 | **完了** |
-| Phase 5 | 検証・ベンチマーク | **完了** |
-| Phase 6 | パッケージング・リリース | **一部完了(Linux/macOS/WindowsともCI (`.github/workflows/wheels.yml`) 上でcibuildwheelビルドを実行する設定は完了。PyPI公開・manylinux向けBLAS同梱 (`auditwheel repair`) はまだ) |
+| Phase 0 | Verification harness (golden reference on real Octave) | **Done** |
+| Phase 1 | Strip MEX from C kernels → standalone C library | **Done** |
+| Phase 2 | Python bindings (ctypes) (clusters 1-5) | **Done** |
+| Phase 3-a | Turn thin MEX-wrapper `.m` files into the public Python API | **Done** |
+| Phase 3-b | Port cone-math utilities (eigK, psdeig, psdscale, etc.) | **Done** |
+| Phase 3-c | Port interior-point iteration control logic (sdinit..optstep) | **Done** |
+| Phase 3-d | Port `sedumi.m` itself + full verification against golden reference | **Done (LP+SOCP+PSD scope)** |
+| Phase 4 | High-level API and I/O compatibility layer (.mat/SDPA) | **Done** |
+| Phase 5 | Verification and benchmarking | **Done** |
+| Phase 6 | Packaging and release | **Partially done** (Linux/macOS/Windows all have cibuildwheel builds configured in CI (`.github/workflows/wheels.yml`); PyPI publication and manylinux BLAS bundling (`auditwheel repair`) still pending) |
 
-Phase 3(内点法アルゴリズム本体の移植)は **LP + SOCP(2次錐) + PSD(半正定値
-錐)問題について完了**しており、実際に `sedumipy.sedumi.sedumi(A,b,c,K)` を
-呼べば Octave 版の SeDuMi と完全一致する解が返ってくることを、実機
-オラクル比較で確認済み(`tests/test_sedumi.py`。PSD錐のメインループ結線は
-`getada_psd.py`(`build_aord`/`getada_psd`、`incorder.py`/`getsymbada.py`/
-`_native.getada1`/`getada2`/`getada3` を使用)、検証は同ファイルの
-`sdp_feasible`/`sdp_mixed_cones_feasible` ケース)。
+Phase 3 (porting the interior-point algorithm itself) is **complete for
+LP + SOCP (second-order cone) + PSD (positive semidefinite cone)
+problems**: calling `sedumipy.sedumi.sedumi(A,b,c,K)` has been confirmed,
+via real-oracle comparison, to return solutions that exactly match
+Octave SeDuMi (`tests/test_sedumi.py`. The PSD-cone main-loop wiring is
+in `getada_psd.py` (`build_aord`/`getada_psd`, using `incorder.py`/
+`getsymbada.py`/`_native.getada1`/`getada2`/`getada3`), verified by the
+same file's `sdp_feasible`/`sdp_mixed_cones_feasible` cases).
 
-**密列(dense columns)最適化も移植済み**(`getdense.py`/`symbcholden.py`/
-`deninfac.py`/`pcg.py`の product-form 前処理補正、`_native.symbfwblk`/
-`adendotd`/`adenscale`/`dpr1fact` のオーケストレーション)。密列を実際に
-含む問題(`tests/test_sedumi.py::test_sedumi_dense_matches_octave`、
-`pars.denf=3` で `getdense.m` の検出閾値を意図的に下げたケース)でも
-Octave版と `iter`/`numerr`/`pinf`/`dinf`/`x` が一致することを確認済み
-(`y` は §6 の「双対解の非一意性」を参照)。
+**Dense-column optimization is also ported** (`getdense.py`/
+`symbcholden.py`/`deninfac.py`/`pcg.py`'s product-form preconditioning
+correction, orchestrating `_native.symbfwblk`/`adendotd`/`adenscale`/
+`dpr1fact`). Even on problems that actually contain dense columns
+(`tests/test_sedumi.py::test_sedumi_dense_matches_octave`, deliberately
+lowering `getdense.m`'s detection threshold via `pars.denf=3`), `iter`/
+`numerr`/`pinf`/`dinf`/`x` all match the Octave version (see §6 on "dual
+solution non-uniqueness" for `y`).
 
-**Phase 5(実問題での検証)も完了**(`tests/test_golden_end_to_end.py`):
-Phase 0 の golden reference が対象にしていた実問題(SDPLIB由来、
-`vendor/sedumi-upstream/examples/`、`nb`/`arch0`/`control07`/`trto3`/
-`OH_2Pi_STO-6GN9r12g1T2`。`quantum` は `K.scomplex`/`K.ycomplex` を使う
-複素Hermitian PSD問題でスコープ外のため除外)で `sedumipy.sedumi()` を
-実行し、Octave実機の golden reference と目的関数値が一致することを
-確認した。この検証の過程で以下の2件の実バグを発見・修正した(詳細は
-§6):
-- `K.s==0`(LP+SOCPのみ)パスのADA記号的コレスキー順序が、Lorentz錐
-  のarrow項(`d.q2`)に依存するsparsity patternの一部を見落としており、
-  `d.q2`が育つにつれてCholesky分解が不正確になりPCGが発散するバグ
-  (`nb.mat`、396個のSOCPブロックで顕在化)。
-- `cpspdiag`(`getada3`のK.s==0分岐が呼ぶ診断用の対角成分抽出)が
-  `ibsearch`マクロ経由で`bsearch()`を使っており、そのコンパレータが
-  `sortnnz.c`/`iswnbr.c`と同種のqsort/bsearchコンパレータ未定義動作を
-  踏んでいた(§6参照)。ただし実際のsedumi.py呼び出し経路では
-  `K.s==0`のとき`getada3`自体が呼ばれないため、実害はテスト
-  (`test_getada_no_psd_blocks`)止まりだった。
+**Phase 5 (verification on real problems) is also complete**
+(`tests/test_golden_end_to_end.py`): running `sedumipy.sedumi()` on the
+real problems the Phase 0 golden reference targeted (from SDPLIB, under
+`vendor/sedumi-upstream/examples/`: `nb`/`arch0`/`control07`/`trto3`/
+`OH_2Pi_STO-6GN9r12g1T2` — `quantum` is excluded as out of scope, since
+it's a complex-Hermitian PSD problem using `K.scomplex`/`K.ycomplex`)
+confirmed the objective value matches the Octave golden reference. This
+verification effort found and fixed two real bugs along the way
+(details in §6):
+- The `K.s==0` (LP+SOCP only) path's ADA symbolic-Cholesky ordering was
+  missing part of the sparsity pattern that depends on the Lorentz
+  cone's arrow term (`d.q2`) — as `d.q2` grows, the Cholesky
+  factorization becomes inaccurate and PCG diverges (surfaced on
+  `nb.mat`, which has 396 SOCP blocks).
+- `cpspdiag` (the diagonal-extraction helper the `K.s==0` branch of
+  `getada3` calls for diagnostics) used `bsearch()` via the `ibsearch`
+  macro, whose comparator hit the same qsort/bsearch
+  undefined-behavior class of bug as `sortnnz.c`/`iswnbr.c` (see §6).
+  However, since the actual `sedumi.py` call path never invokes
+  `getada3` when `K.s==0`, the real-world impact was limited to a test
+  (`test_getada_no_psd_blocks`).
 
-## 3. ディレクトリ構成
+## 3. Directory layout
 
 ```
-sedumipy/                    # リポジトリルート
+sedumipy/                    # repository root
   vendor/
-    sedumi-upstream/          # submodule: sqlp/sedumi(フォーク元コミットに固定、参照専用)
-  csrc/                       # mex.h依存を除去した標準alone Cカーネルソース(libsedumi.so の材料)
-    *.c / *.h                  # sedumi_platform.h 経由でMEX非依存ビルドに対応させたフォーク
+    sedumi-upstream/          # submodule: sqlp/sedumi (pinned to the fork's starting commit, reference only)
+  csrc/                       # standalone C kernel sources with mex.h stripped out (source for libsedumi.so)
+    *.c / *.h                  # forked to build MEX-free via sedumi_platform.h
     sedumi_platform.c / .h
-    kernel_smoke/smoke_test.c  # Phase 1 のスモークテスト
+    kernel_smoke/smoke_test.c  # Phase 1 smoke test
   src/
-    sedumipy/                 # 移植先の Python パッケージ本体
-      _native.py               # ctypes バインディング集約(全Cカーネル呼び出しはここに集める)
-      libsedumi.so              # ビルド済み共有ライブラリ(tools/build_libsedumi.sh で生成、gitignore対象)
-      cone.py                   # コーン数学ユーティリティ(eigK, psdeig, psdscale, frameit...)
-      pretransfo.py / posttransfo.py   # 外部形式 <-> 内部形式の変換
-      sdinit.py                 # 初期点生成
-      sdfactor.py / sddir.py    # 自己双対埋め込みの分解・方向計算
-      pcg.py                    # 前処理付き共役勾配法(loopPcg/wrapPcg)
-      wregion.py                # 1反復分の predictor(+corrector)ステップ本体
-      updtransfo.py             # スケーリング点の更新
-      maxstep.py / widelen.py / stepdif.py / trydif.py  # ステップ長計算
-      getada.py / getdatm.py / deninfac.py  # ADA行列の構築・分解(K.s==0)
-      incorder.py / getsymbada.py / getada_psd.py  # ADA行列の構築(K.s!=0)
-      symbchol.py                # ADAの記号的コレスキー(一度だけ実行)
-      optstep.py                 # LP最適性の早期判定(optstep.m)
-      amul.py / checkpars.py     # 補助ユーティリティ
-      sedumi.py                  # トップレベルドライバ(全部をつなぐ)
-      matio.py                   # Phase 4: .mat問題/解ファイルの読み書き
-      sdpa.py                    # Phase 4: SDPA sparse(.dat-s)形式の読み書き
+    sedumipy/                 # the ported Python package itself
+      _native.py               # all ctypes bindings collected here (every C-kernel call goes through this)
+      libsedumi.so              # built shared library (produced by tools/build_libsedumi.sh, gitignored)
+      cone.py                   # cone-math utilities (eigK, psdeig, psdscale, frameit, ...)
+      pretransfo.py / posttransfo.py   # external <-> internal format conversion
+      sdinit.py                 # initial-point generation
+      sdfactor.py / sddir.py    # self-dual embedding factorization and direction computation
+      pcg.py                    # preconditioned conjugate gradient (loopPcg/wrapPcg)
+      wregion.py                # one iteration's predictor(+corrector) step
+      updtransfo.py             # scaling-point update
+      maxstep.py / widelen.py / stepdif.py / trydif.py  # step-length computation
+      getada.py / getdatm.py / deninfac.py  # ADA matrix construction/factorization (K.s==0)
+      incorder.py / getsymbada.py / getada_psd.py  # ADA matrix construction (K.s!=0)
+      symbchol.py                # symbolic Cholesky of ADA (run once)
+      optstep.py                 # LP early-optimality check (optstep.m)
+      amul.py / checkpars.py     # auxiliary utilities
+      sedumi.py                  # top-level driver (wires everything together)
+      matio.py                   # Phase 4: read/write .mat problem/solution files
+      sdpa.py                    # Phase 4: read/write SDPA sparse (.dat-s) format
   tests/
-    test_*.py                  # 各モジュールの検証テスト(オラクル比較)
-    fixtures/                  # Octave実機で生成した .mat オラクルデータ(コミット済み)
-    golden/                    # Phase 0 の golden reference
+    test_*.py                  # per-module verification tests (oracle comparison)
+    fixtures/                  # oracle data generated on real Octave (committed)
+    golden/                    # Phase 0 golden reference
   tools/
-    generate_*_oracle.m        # 各テストのオラクルを vendor/sedumi-upstream の Octave/MEXビルドで生成するスクリプト
-    build_libsedumi.sh         # csrc/ から libsedumi.so をビルドするスクリプト
+    generate_*_oracle.m        # per-test scripts that generate oracles from vendor/sedumi-upstream's Octave/MEX build
+    build_libsedumi.sh         # builds libsedumi.so from csrc/
   pyproject.toml
-  setup.py                      # Phase 6: wheelビルド時にlibsedumi.soをコンパイルするbuild_extフック
-  README.md                    # (やや古い。フェーズ概要はこのCONTRIBUTING.mdの方が新しい)
+  setup.py                      # Phase 6: build_ext hook that compiles libsedumi.so at wheel-build time
+  README.md                    # (somewhat stale — this CONTRIBUTING.md has the more current phase overview)
 ```
 
-## 4. 開発ワークフロー(1つの `.m` ファイルを移植する際の手順)
+## 4. Development workflow (steps for porting a single `.m` file)
 
-これまで一貫して踏襲してきた手順。新しく関数を移植するときはこれに
-従うこと。
+This is the procedure followed consistently so far. Follow it when
+porting a new function.
 
-1. **対象の `.m` ファイルの実ソースを全部読む。** コメントだけでなく
-   実装ロジックを1行ずつ理解する。thin MEX wrapper(`sedumi_binary_error()`
-   だけを呼ぶスタブ)の場合は対応する `.c` ファイルを読む。
-2. **忠実な Python 移植を書く。** 変数名や処理順序はできるだけ `.m`/`.c`
-   に対応させ、後から見比べやすくする。ドキュストリングには「何を
-   ポートしたか」「`.m` ファイルの何行目に対応するか」「意図的に省略
-   した部分とその理由」を明記する。
-3. **Octave実機でオラクルを生成する。** `tools/generate_<name>_oracle.m`
-   を書き、`vendor/sedumi-upstream/` の実際の `.m`/MEX ビルド
-   (`install_sedumi` 済み)を呼び出して、入力データと出力を `.mat` に保存する。
+1. **Read the target `.m` file's entire real source.** Understand the
+   implementation logic line by line, not just the comments. If it's a
+   thin MEX wrapper (a stub that just calls
+   `sedumi_binary_error()`), read the corresponding `.c` file instead.
+2. **Write a faithful Python port.** Match variable names and
+   processing order to the `.m`/`.c` source as closely as possible, so
+   the two are easy to compare later. In the docstring, spell out what
+   was ported, which lines of the `.m` file it corresponds to, and any
+   parts deliberately omitted and why.
+3. **Generate an oracle on real Octave.** Write
+   `tools/generate_<name>_oracle.m`, call the actual `.m`/MEX build
+   under `vendor/sedumi-upstream/` (with `install_sedumi` already run)
+   to save the input data and output to a `.mat` file.
    ```
    octave-cli --no-gui --eval "cd tools; generate_<name>_oracle"
    ```
-   既存フィクスチャ(例: `pretransfo` の `K2`/`prep`)を使い回せる場合は
-   積極的に再利用し、ゼロから計算し直すコストを避ける。
-4. **`test_<name>.py` を書いて比較する。** `.mat` を読み込み、Python版の
-   出力と `np.testing.assert_allclose` で突き合わせる。
-5. **不一致が出たら中間値を1つずつ突き合わせてデバッグする。** 「なんと
-   なく直す」のではなく、Octave側とPython側で同じ変数を1つずつ出力して
-   どこで最初にズレるかを特定する。これまで見つかった実バグ(§6参照)
-   は全てこの方法で見つけている。
-6. **`python_port/tests/ -q` を全部流して回帰がないか確認してからコミット。**
-   コミットメッセージには「何を移植したか」「見つけたバグとその修正」
-   「意図的なスコープ制限とその理由」を書く。
+   Reuse an existing fixture (e.g. `pretransfo`'s `K2`/`prep`) whenever
+   possible, rather than paying the cost of recomputing from scratch.
+4. **Write `test_<name>.py` and compare.** Load the `.mat` file and
+   check the Python output against it with
+   `np.testing.assert_allclose`.
+5. **When something doesn't match, debug by comparing intermediate
+   values one at a time.** Don't "fix it by feel" — print the same
+   variable from both the Octave side and the Python side and pin down
+   exactly where they first diverge. Every real bug found so far (§6)
+   was found this way.
+6. **Run all of `python_port/tests/ -q` to check for regressions before
+   committing.** Commit messages should state what was ported, any bugs
+   found and fixed, and any deliberate scope limitations and why.
 
-### オラクルスクリプトを書くときの注意(乱数ストリーム)
+### A note on writing oracle scripts (random streams)
 
-Octave の `rand('seed', N)` は一様乱数の状態しかリセットしない。
-`randn` は別ストリームなので、`randn` を使うケースでは必ず
-`randn('seed', N)` も一緒に呼ぶこと(呼び忘れると実行するたびに
-別のデータが生成され、フィクスチャが再現不能になる → 実際にこの
-セッションでハマった)。
+Octave's `rand('seed', N)` only resets the state of the uniform random
+generator. `randn` is a separate stream, so any case using `randn` must
+also call `randn('seed', N)` (forgetting this means a different dataset
+is generated on every run, making the fixture unreproducible — this
+actually happened and cost time in this session).
 
-また、既存のオラクル生成スクリプトの**途中**に新しいコードを挿入すると、
-それより後ろの `rand()` 呼び出しが全部ズレて、無関係な既存フィクスチャ
-まで書き換わってしまうことがある。新しいケースは必ずスクリプトの
-**末尾に追記**し、`git diff --stat` で既存フィクスチャのファイルサイズが
-変わっていないか確認すること。
+Also, inserting new code **in the middle** of an existing oracle-
+generation script shifts every `rand()` call after it, silently
+rewriting unrelated existing fixtures too. Always append new cases at
+the **end** of the script, and check `git diff --stat` to confirm no
+existing fixture file's size changed.
 
-## 5. スコープ上の制約(意図的に未実装にしている部分)
+## 5. Scope limitations (deliberately unimplemented parts)
 
-以下は「気づいていない抜け」ではなく、**意図的に `NotImplementedError`
-で弾いている**制約。理由も含めて各モジュールのdocstringに明記済み。
+The following are not "gaps we didn't notice" but constraints
+**deliberately rejected with `NotImplementedError`**, each documented
+with its reasoning in the relevant module's docstring.
 
-- **回転2次錐(`K.r`)** は `pretransfo.py` の段階で標準2次錐(`K.q`)に
-  変換されるため、それより後段のコードは意識する必要はない
-  (`sedumi.py` の検証テストにも回転錐のケースが1つ含まれている)。
-- **コンソール出力・v-plot・`pars.stopat` のデバッグブレーク・事前の
-  ランク診断・DIMACS誤差指標(`info.err`)** は移植していない。これらは
-  全て「診断・表示専用」で `(x,y,info)` の値そのものには影響しない
-  ため、優先度を下げている。
+- **Rotated second-order cones (`K.r`)** are converted to standard
+  second-order cones (`K.q`) at the `pretransfo.py` stage, so no code
+  downstream needs to be aware of them (`sedumi.py`'s verification
+  tests include one rotated-cone case).
+- **Console output, the v-plot, `pars.stopat`'s debug break, the
+  pre-solve rank diagnostic, and the DIMACS error metrics
+  (`info.err`)** are not ported. All of these are purely
+  diagnostic/display and have no effect on the returned `(x, y, info)`
+  values, so they were deprioritized.
 
-## 6. これまでに見つかった実バグ・注意点(教訓)
+## 6. Real bugs and gotchas found so far (lessons learned)
 
-- **本家の「全ブロック一括(all-or-nothing)分岐」は移植せず、ブロック
-  ごとにクランプする。** `widelen.m`/`trydif.m`/`maxstep.m` の3箇所に、
-  Lorentz錐ブロックの判別式に対する
+- **Real SeDuMi's "all-or-nothing across every block" branch is not
+  ported as-is — clamp block by block instead.** `widelen.m`/
+  `trydif.m`/`maxstep.m` all contain, for the Lorentz-cone blocks'
+  discriminant,
 
   ```matlab
   tmp = halfxz.^2 - detxz;
-  if all(tmp > 0)          % ← 全ブロックまとめて1回だけ判定
+  if all(tmp > 0)          % <- decided once, across ALL blocks together
       lab2q = halfxz + sqrt(tmp);
   else
-      lab2q = halfxz;      % ← 1ブロック巻き添えで全ブロックが劣化
+      lab2q = halfxz;      % <- one bad block degrades every block
   end
   ```
 
-  という**グローバルな全か無かの分岐**が存在する(`maxstep.m` は
-  `norm2` に対する同型のもの)。一見「`sqrt`に負値を渡さないための
-  安全策」に見えるが、判別式は**厳密算術では必ず非負**である:
-  この式が生む2つの固有値は `lab2q` と `detxz/lab2q` で、積が `detxz`、
-  和が `2*halfxz` なので `tmp` は恒等的に `((lab1-lab2)/2)^2`、すなわち
-  完全平方。負になるのは1ブロックの2固有値がほぼ一致したときの丸め
-  誤差だけであり、しかも**完全に一致すると厳密に0**になって、本家の
-  strictな `> 0` はこれも弾く(1つのLorentzブロックの複製で構成される
-  構造的な問題では日常的に起きる)。実測でも、発火時の値は微小な負数
-  ではなく**厳密に `-0.0`** だった。
+  a **global all-or-nothing branch** (`maxstep.m` has an isomorphic one
+  for `norm2`). At first glance this looks like "a safeguard against
+  passing a negative value to `sqrt`," but the discriminant is
+  **always non-negative in exact arithmetic**: the two eigenvalues this
+  expression produces are `lab2q` and `detxz/lab2q`, whose product is
+  `detxz` and whose sum is `2*halfxz`, so `tmp` is identically
+  `((lab1-lab2)/2)^2` — a perfect square. It only goes negative from
+  rounding error when a single block's two eigenvalues nearly coincide,
+  and when they coincide *exactly* it becomes exactly 0 — which real
+  SeDuMi's strict `> 0` also rejects (a routine occurrence in problems
+  structured from duplicates of a single Lorentz block). In practice,
+  the observed triggering value wasn't a tiny negative number but
+  **exactly `-0.0`**.
 
-  したがって移植側は**ブロックごとにクランプ**する:
+  So the port **clamps per block** instead:
 
   ```python
   lab2q = halfxz + np.sqrt(np.maximum(tmp, 0.0))
   ```
 
-  判別式が非正なそのブロックについては本家のフォールバックと厳密に
-  同値(`sqrt(0)==0`)、他の全ブロックについては本家が捨てていた正確な
-  式を保ち、`sqrt`に負値を渡さないという本家の安全性もそのまま満たす
-  ―― つまりトレードオフではなく**本家のどちらの分岐よりも厳密に正確**。
+  For the one block whose discriminant is non-positive, this is exactly
+  equivalent to real SeDuMi's fallback (`sqrt(0)==0`); for every other
+  block, it keeps the exact expression real SeDuMi was discarding, while
+  still satisfying real SeDuMi's own safety goal of never passing a
+  negative value to `sqrt` — in other words, this isn't a tradeoff, it
+  is **strictly more accurate than either of real SeDuMi's branches**.
 
-  `maxstep.m` のものは精度ではなく**安全性のバグ**である点に注意:
-  フォールバック時に `norm2` は平方根を取らないまま `reltr - norm2` に
-  使われる(二乗量を線形量から引く次元的な不整合)。判別式が1未満
-  ―― スケーリング後は普通のこと ―― では `v < sqrt(v)` なので、
-  本家版は錐の境界までのステップ長を**過大評価**する。nb_L2で計測
-  すると64回中5回発火し、5回とも過大評価だった。
+  Note that `maxstep.m`'s version is a **safety bug, not just an
+  accuracy one**: in the fallback, `norm2` is used unsquared in
+  `reltr - norm2` without ever taking a square root (a dimensional
+  mismatch, subtracting a linear quantity from a squared one). When the
+  discriminant is below 1 — the normal case after scaling — `v <
+  sqrt(v)`, so real SeDuMi **overestimates** the step length to the cone
+  boundary. Measured on nb_L2, this fired 5 times out of 64, and all 5
+  were overestimates.
 
-  効果(DIMACS、3箇所とも本家挙動 vs クランプで切り替えて計測):
+  Effect (measured on DIMACS, toggling all three sites between real
+  SeDuMi's branch and the clamp):
 
-  | 問題 | 本家の分岐 | クランプ | 実機Octave/MEX |
+  | Problem | Real SeDuMi's branch | Clamped | Real Octave/MEX |
   |---|---|---|---|
   | nb_L2 | numerr=2, iter=10 | **numerr=0, iter=16** | numerr=0, iter=16 |
-  | nql180old | numerr=2, iter=12 (cx=18.08 vs by=7.08) | **numerr=1, iter=42** (cx≈by 8桁) | numerr=1, iter=54 |
-  | qssp30old | numerr=2 (cx=6.6017 vs by=6.3582) | **numerr=1** (cx=6.496695, 公表値6.4966749) | numerr=2(本家も失敗) |
+  | nql180old | numerr=2, iter=12 (cx=18.08 vs by=7.08) | **numerr=1, iter=42** (cx≈by to 8 digits) | numerr=1, iter=54 |
+  | qssp30old | numerr=2 (cx=6.6017 vs by=6.3582) | **numerr=1** (cx=6.496695, published value 6.4966749) | numerr=2 (real SeDuMi also fails) |
 
-  教訓として: **本家の分岐条件が「数学的にありえない場合」に対する
-  防御である場合、それを逐語移植すると防御が過剰に広く効いてしまう
-  ことがある。** 「本家にそう書いてあるから」は移植の既定方針として
-  正しいが、その条件が守ろうとしている不変量(ここでは「判別式は
-  完全平方だから非負」)を確認すれば、本家より厳密に良い実装が
-  一意に決まることがある。
-- **MATLABの値渡し意味論 vs ctypesのin-place変更。** `fwsolve`/`bwsolve`
-  はCカーネル(`fwblkslv.c`/`bwblkslv.c`)がin-placeで書き換える設計を
-  そのままctypesバインディングしているため、呼び出し側でバッファを
-  使い回すMATLABコードをそのまま移植すると**サイレントに壊れる**。
-  `pcg.py` の `sparfwslv`/`sparbwslv` で「呼び出し前に必ずコピーする」
-  ように統一して解決した。同種の罠は他のin-placeネイティブ関数
-  (`fwdpr1`/`bwdpr1`等)にもあり得るので、新しくバインディングを
-  使うときは常に疑うこと。
-- **mexFunctionの自動スライシング。** `psdframeit.c`/`psdinvjmul.c` の
-  ような一部のMEXカーネルは、「PSD部分だけの短い配列」と「L+Q+PSDの
-  フル長配列」の両方を受け付け、フル長の場合は自動でオフセットを
-  読み飛ばす(`x += cK.lpN + 2*cK.lorN`)。Phase 2のctypesバインディング
-  がこの自動スライシングを再現し忘れていたことが `psdinvjmul` で
-  実際に発覚した(`wregion.py` 移植時)。新しいバインディングを
-  追加する際は元の `mexFunction` のこの種の分岐を見落とさないこと。
-- **qsortコンパレータの未定義動作。** `sortnnz.c`/`iswnbr.c` は
-  `signed char` を返すコンパレータを `int(*)(const void*,const void*)`
-  にキャストして `qsort()` に渡しており、実機で実際に非決定的な
-  挙動を確認した。この種の関数は**ctypesバインディングせず**、
-  コメントに書かれた本来のアルゴリズムをPythonで直接書き直す方針
-  にしている(`neighborhood.py` の `iswnbr` が実例)。
-- **`symbchol.m` の完全密行列分岐。** ADAが完全に密(全要素非ゼロ)の
-  場合、実際の `symbchol.m` は最小次数順序付け(MMD)を省略して恒等
-  順序+単一巨大supernodeを直接使う。これを再現せず常に `ordmmd` を
-  呼ぶと、**収束はするが反復回数がOctave版とズレる**(小さい密な
-  テスト問題で実際に確認済み)。`symbchol.py` はこの分岐を正確に
-  再現している(`_native.symbolic_cholesky_dense`)。
-- **MATLABの `'` は共役転置。** 実数配列に対しても、複素数が絡む式
-  (`posttransfo.m` の `(x'*prep.QR)'` 等)では単純転置と共役転置の
-  違いが結果に影響する。移植時は常に注意する。
-- **`optstep.m` の `sum(K.s)!=0` 分岐は実質デッドコード。** `sedumi.m`
-  が `optstep` を呼ぶのは `lponly = (K.l==length(c))` の場合のみで、
-  これは `K.q`/`K.s` が両方空であることを強制する。つまり
-  `optstep.m` 自身にPSD対応の分岐が書いてあっても、実際の呼び出し
-  経路からは絶対に到達しない。こういう「到達不能性を呼び出し元の
-  条件から証明できるデッドコード」は、移植せずに `NotImplementedError`
-  で塞いで良い、という判断をしている。ただし本当に呼び出し元の
-  条件を確認してからにすること(推測で「多分デッドコードだろう」で
-  済ませない)。
-- **`sparfwslv`/`sparbwslv`(`pcg.py`)は `L.perm` を内部で
-  gather/scatter しなければならない。** 実際の `fwblkslv.c`/
-  `bwblkslv.c` は `y = L\b(L.perm)`(前進代入)/`y(L.perm) = L'\b`
-  (後退代入)というように、呼び出しの内側で `L.perm` によるgather/
-  scatterを行う。密列最適化導入前の版ではこれを省略し、代わりに
-  `loopPcg`/`wrapPcg` を呼ぶ全箇所(テストも含め)で `L.perm` を
-  外側から一貫して手動で適用/解除する形にしていた ―― PCGは
-  「内部のインデックス付け規約が呼び出し全体で自己無矛盾でありさえ
-  すれば」正しい解に収束するため、密列がない(`Lden` が恒等)場合は
-  これでも数値的に正しかった。しかし `deninfac.py` が実際に
-  `L.perm` で `Ad` を並べ替えた**真の**(恒等でない)`Lden` を組み立てる
-  ようになると、`loopPcg` の同じ反復内で `fwdpr1(Lden, sparfwslv(L,r))`
-  のように `Lden` の項と `sparfwslv` の項を合成する際、両者の
-  インデックス規約が食い違って反復が壊れる(`iter` は合っても
-  途中の残差が発散する形で発覚した)。`sparfwslv`/`sparbwslv` 自体を
-  実際のCカーネルと同じgather/scatter付きの実装に直し、
-  `wrapPcg`/`sdfactor.py` 側は本家 `.m` 通り一切パーミュートしない
-  形に戻すことで解決 ―― 「呼び出し側で辻褄合わせをする」workaroundは
-  一見動いても、後から非自明な追加機能(この場合は密列)が入ると
-  壊れる典型例だった。
-- **rank落ちした `At` を使うテストフィクスチャでは双対解 `y` が
-  非一意になる。** `tests/fixtures/sedumi/lp_socp_sdp_dense_feasible.mat`
-  (密列最適化のend-to-endテスト用)は `At` が23行20列で
-  `rank(At)=16`(密列検出の`h`フロアを`NORMDEN=5`に固定するため
-  PSDブロックの背景行密度を`0.02`まで下げた結果、一部の行が構造的に
-  全ゼロになりやすく、シード1〜400を全数探索しても`rank(At)=20`
-  (フルランク)になるケースは1つもなかった)。`At`がフルランクでない
-  等式制約系では、最適双対解 `y` は `At@delta=0` となる任意の
-  `delta` だけずらしても同じ目的関数値・同じ双対スラック
-  (`s=c-At@y`)を与えるため一意に定まらない。Python版とOctave版は
-  `iter`/`numerr`/`pinf`/`dinf` が完全一致し `x` も浮動小数点誤差の
-  範囲内で一致する(=アルゴリズムは同一に動いている)にもかかわらず、
-  `y` は縮退方向に沿って2-ノルムで約5もズレる
-  (`At@(y_py-y_oct)`, `b@(y_py-y_oct)` がともに実質ゼロであることで
-  確認済み)。このため `test_sedumi_dense_matches_octave` では `y` の
-  厳密一致ではなく、双対の実行可能性・最適性(`c-At@y` と `b@y`)を
-  比較する形にしている。**同じ理由で `At` がフルランクとは限らない
-  ランダム生成テストフィクスチャを新規に作る際は、`y` を厳密比較する
-  前に `rank(At)==m` かどうかを確認すること。**
-- **`K.s==0` パスの一回限りのADA記号的コレスキー順序が、Lorentz錐の
-  arrow項に依存するsparsity patternの一部を見落としていた。**
-  `sedinit.py` はスケーリング点 `d["q2"]`(各Lorentz錐のarrow部分の
-  スカラー)を必ず厳密に0から開始する(`sdinit.m`の`d.q2 = zeros(...)`
-  通り)。`sedumi.py`の`K.s==0`分岐は、この最初の`d`(=`d.q2=0`)で
-  一度だけ`ADA = getada(A,K,d,DAt)`を計算し、その**数値的な**
-  sparsity patternをそのまま`symbchol(ADA)`に渡して以後全反復で使い
-  回していた。ところが`getada.py`のLorentz項
-  (`DAt_q.T @ DAt_q`、`DAt.q[k,j] = d.q1[k]*Aj[k] + d.q2[k]*(...)`)
-  は、`d.q2=0`のとき同じLorentz錐ブロックを共有するだけで行方向には
-  重ならない制約ペア `(i,j)` に対する寄与が構造的にまるごと消えて
-  しまう ―― つまり反復1時点のADAは、後の反復で`d.q2`が育つにつれて
-  実際には非ゼロになる位置を欠いた、過小なsparsity patternになって
-  いた。`numeric_cholesky`はこの(固定された)symbolic patternの外側
-  には書き込めないため、`d.q2`が育つ反復(実際には3〜5反復目以降)
-  からCholesky分解が徐々に不正確になり、PCGの前処理性能が崩れて
-  反復回数上限に張り付き、最終的に誤った解に収束する。
-  `vendor/sedumi-upstream/examples/nb.mat`(LP+396個のSOCPブロック)
-  で実際に確認: 本家Octave版は20反復・`numerr=0`で収束するのに対し、
-  修正前のPython版は9反復で`numerr=2`(深刻な数値エラー)を報告して
-  完全に異なる値を返していた。本家`sedumi.m`はこの問題を、
-  `getsymbada.m`ベースの構造的(値に依存しない)pattern構築を
-  `sum(K.s)`の値に関わらず常に`sdinit`より前に実行することで回避して
-  いる(本ファイルの過去のこの箇所の記述、および`sedumi.py`自身の
-  SCOPEドキュストリングが「実装を簡略化した既知の相違点」として
-  触れていた箇所)。**修正**: `sedumi.py`の`K.s==0`分岐で、
-  `symbchol()`に渡す一度限りのADAだけは`d["q2"]`を(捨てるための
-  ローカルコピーで)強制的に非ゼロにしたものから構築するようにし、
-  以後の各反復で実際に使う`d`/`DAt`/`ADA`には一切手を加えないように
-  した。`tests/test_golden_end_to_end.py`(Phase 5, §7参照)で
-  `nb`/`arch0`/`control07`/`trto3`/`OH_2Pi_STO-6GN9r12g1T2`の5問題
-  全てがOctave実機の結果と一致することを確認済み。
-- **`getada3`の`K.s==0`分岐が呼ぶ`cpspdiag`も、`sortnnz.c`/`iswnbr.c`
-  と同じqsort/bsearchコンパレータ未定義動作を踏んでいた。**
-  `cpspdiag`は`blksdp.h`の`ibsearch`マクロ(=標準ライブラリの
-  `bsearch()`)経由でADAの対角成分を探す。`ibsearch`はこの探索に
-  `char`を返す`icmp()`を`COMPFUN`(`int(*)(const void*,const void*)`)
-  にキャストして渡しており、これも未定義動作 ―― 実際にこのport の
-  ビルドでは`bsearch()`が対角成分を一度も見つけられず、`absd`が
-  (対角成分が正しくソートされた形で存在しているにもかかわらず)
-  常に全て0.0になっていた(`tests/test_getada.py::test_getada_no_psd_blocks`
-  で発覚)。ただし`sedumi.py`の実際の呼び出し経路では、`getada3`
-  自体が`has_psd=True`(=`K.s`が非空、したがって内部的に`sdpN>0`)の
-  ときしか呼ばれないため、この`sdpN==0`分岐は実運用では到達しない
-  デッドコードであり実害はなかった。`sortnnz`/`iswnbr`のときと同じ
-  方針で解決 ―― `cpspdiag`はctypesバインディングをやめ、
-  `scipy.sparse`の`.diagonal()`で直接対角成分を取る(`cpspdiag.c`
-  自身のドキュメントコメント通りの意図)Python実装に置き換えた。
+  The lesson: **when a branch in real SeDuMi's code exists as a
+  safeguard against a "mathematically impossible" case, porting it
+  verbatim can make that safeguard fire far too broadly.** "It's written
+  that way in real SeDuMi" is the right default porting policy, but
+  checking the invariant the condition is trying to protect (here, "the
+  discriminant is a perfect square, hence non-negative") can uniquely
+  determine an implementation that is strictly better than the
+  original.
+- **MATLAB's pass-by-value semantics vs. ctypes' in-place mutation.**
+  `fwsolve`/`bwsolve` are direct ctypes bindings of C kernels
+  (`fwblkslv.c`/`bwblkslv.c`) that mutate their buffers in place, so
+  porting MATLAB code that reuses a buffer across calls **breaks
+  silently**. Solved in `pcg.py`'s `sparfwslv`/`sparbwslv` by
+  consistently copying the buffer before every call. The same trap can
+  apply to other in-place native functions (`fwdpr1`/`bwdpr1`, etc.), so
+  always suspect it when binding something new.
+- **mexFunction's automatic slicing.** Some MEX kernels, such as
+  `psdframeit.c`/`psdinvjmul.c`, accept either a "short array covering
+  only the PSD part" or a "full-length L+Q+PSD array," and when given
+  the full-length form, automatically skip the offset
+  (`x += cK.lpN + 2*cK.lorN`). Phase 2's ctypes bindings originally
+  forgot to reproduce this auto-slicing, which surfaced as a real bug
+  in `psdinvjmul` (found while porting `wregion.py`). Watch for this
+  kind of branch in the original `mexFunction` when adding a new
+  binding.
+- **Undefined behavior in a qsort comparator.** `sortnnz.c`/`iswnbr.c`
+  cast a comparator returning `signed char` to
+  `int(*)(const void*,const void*)` before passing it to `qsort()`,
+  which was confirmed on real hardware to cause non-deterministic
+  behavior. Functions like this are **not ctypes-bound**; instead, the
+  algorithm described in the comments is rewritten directly in Python
+  (`neighborhood.py`'s `iswnbr` is one example).
+- **`symbchol.m`'s fully-dense-matrix branch.** When ADA is completely
+  dense (every entry nonzero), the real `symbchol.m` skips minimum-
+  degree ordering (MMD) and uses identity ordering plus a single giant
+  supernode directly. Not reproducing this branch and always calling
+  `ordmmd` still converges, but **the iteration count drifts from the
+  Octave version** (confirmed on a small dense test problem).
+  `symbchol.py` reproduces this branch exactly
+  (`_native.symbolic_cholesky_dense`).
+- **MATLAB's `'` is the conjugate transpose.** Even for real-valued
+  arrays, in expressions involving complex numbers (e.g.
+  `posttransfo.m`'s `(x'*prep.QR)'`), the difference between a plain
+  transpose and a conjugate transpose affects the result. Always watch
+  for this when porting.
+- **`optstep.m`'s `sum(K.s)!=0` branch is effectively dead code.**
+  `sedumi.m` only calls `optstep` when `lponly = (K.l==length(c))`,
+  which forces `K.q`/`K.s` to both be empty. So even though
+  `optstep.m` itself has a branch for the PSD case, the real call path
+  can never reach it. This kind of "dead code whose unreachability can
+  be proven from the caller's own condition" is fine to leave unported,
+  behind a `NotImplementedError` — but only after actually confirming
+  the caller's condition (never on a guess of "probably dead code").
+- **`sparfwslv`/`sparbwslv` (`pcg.py`) must gather/scatter by `L.perm`
+  internally.** The real `fwblkslv.c`/`bwblkslv.c` do the gather/scatter
+  by `L.perm` *inside* the call itself — forward substitution is
+  `y = L\b(L.perm)`, back substitution is `y(L.perm) = L'\b`. The
+  version of this port before dense-column optimization was added
+  omitted this and instead had every caller of `loopPcg`/`wrapPcg`
+  (tests included) apply/undo `L.perm` manually and consistently from
+  the outside — since PCG converges to the correct solution as long as
+  "the internal indexing convention is self-consistent across the whole
+  call," this was numerically correct as long as there were no dense
+  columns (i.e. `Lden` was the identity). But once `deninfac.py` started
+  building a **genuine** (non-identity) `Lden` that actually permutes
+  `Ad` by `L.perm`, combining the `Lden` term with the `sparfwslv` term
+  within the same `loopPcg` iteration (as in
+  `fwdpr1(Lden, sparfwslv(L,r))`) hit an indexing-convention mismatch
+  that broke the iteration (this surfaced as `iter` still matching but
+  the intermediate residual diverging). Fixed by making `sparfwslv`/
+  `sparbwslv` themselves do the gather/scatter exactly like the real C
+  kernels, while restoring `wrapPcg`/`sdfactor.py` to never permute
+  anything, exactly as in the real `.m` files — a textbook case where a
+  "make the caller compensate" workaround can look fine until a
+  non-trivial later feature (here, dense columns) breaks it.
+- **Dual solutions `y` are non-unique on test fixtures whose `At` is
+  rank-deficient.** `tests/fixtures/sedumi/lp_socp_sdp_dense_feasible.mat`
+  (used by the dense-column-optimization end-to-end test) has a 23-row,
+  20-column `At` with `rank(At)=16` (pinning the dense-column detection
+  floor `h` to `NORMDEN=5` required lowering the PSD block's background
+  row density to `0.02`, which made some rows structurally all-zero; an
+  exhaustive search over seeds 1-400 never produced a full-rank
+  (`rank(At)=20`) case). With an equality-constraint system whose `At`
+  isn't full rank, the optimal dual solution `y` is non-unique, since
+  shifting it by any `delta` with `At@delta=0` gives the same objective
+  value and the same dual slack (`s=c-At@y`). Even though the Python and
+  Octave versions match exactly on `iter`/`numerr`/`pinf`/`dinf` and `x`
+  agrees to floating-point tolerance (i.e. the algorithm behaves
+  identically), `y` differs by about 5 in 2-norm along the degenerate
+  direction (confirmed by both `At@(y_py-y_oct)` and
+  `b@(y_py-y_oct)` being essentially zero). Because of this,
+  `test_sedumi_dense_matches_octave` compares dual feasibility/
+  optimality (`c-At@y` and `b@y`) rather than requiring exact agreement
+  on `y`. **For the same reason, when creating a new randomly generated
+  test fixture whose `At` isn't guaranteed full rank, check
+  `rank(At)==m` before comparing `y` exactly.**
+- **The `K.s==0` path's one-time ADA symbolic Cholesky ordering was
+  missing part of the sparsity pattern that depends on the Lorentz
+  cone's arrow term.** `sedinit.py` always initializes the scaling
+  point's `d["q2"]` (each Lorentz cone's arrow-part scalar) to exactly
+  0, matching `sdinit.m`'s `d.q2 = zeros(...)`. The `K.s==0` branch of
+  `sedumi.py` used to compute `ADA = getada(A,K,d,DAt)` once from this
+  initial `d` (with `d.q2=0`), and pass its **numeric** sparsity pattern
+  straight to `symbchol(ADA)`, reusing that pattern for every subsequent
+  iteration. But in `getada.py`'s Lorentz term (`DAt_q.T @ DAt_q`, where
+  `DAt.q[k,j] = d.q1[k]*Aj[k] + d.q2[k]*(...)`), when `d.q2=0` the
+  contribution from any pair of constraints `(i,j)` that share the same
+  Lorentz block but don't overlap in a row structurally vanishes
+  entirely — meaning the ADA at iteration 1 has an
+  under-sized sparsity pattern that's missing positions that actually
+  become nonzero once `d.q2` grows in later iterations. Since
+  `numeric_cholesky` cannot write outside this (fixed) symbolic pattern,
+  the Cholesky factorization becomes progressively inaccurate starting
+  from the iteration where `d.q2` grows (in practice, iteration 3-5
+  onward), PCG's preconditioning degrades, the iteration count pins at
+  its cap, and the solver ultimately converges to the wrong answer.
+  Confirmed on `vendor/sedumi-upstream/examples/nb.mat` (LP + 396 SOCP
+  blocks): real Octave SeDuMi converges in 20 iterations with
+  `numerr=0`, while the unfixed Python version reported `numerr=2`
+  (a serious numerical error) after 9 iterations, returning a
+  completely different value. Real `sedumi.m` avoids this by always
+  building the structural (value-independent) pattern via
+  `getsymbada.m` before `sdinit` runs, regardless of `sum(K.s)`'s value
+  (this file previously noted this, and `sedumi.py`'s own SCOPE
+  docstring flagged it, as a "known difference from a simplified
+  implementation"). **Fix**: in `sedumi.py`'s `K.s==0` branch, build the
+  one-time ADA passed to `symbchol()` from a local, throwaway copy of
+  `d` whose `d["q2"]` is forced nonzero, without touching the `d`/`DAt`/
+  `ADA` actually used in each subsequent iteration.
+  `tests/test_golden_end_to_end.py` (Phase 5, see §7) confirms all five
+  problems — `nb`/`arch0`/`control07`/`trto3`/
+  `OH_2Pi_STO-6GN9r12g1T2` — now match the real Octave results.
+- **`cpspdiag`, called by `getada3`'s `K.s==0` branch, hit the same
+  qsort/bsearch undefined-behavior bug as `sortnnz.c`/`iswnbr.c`.**
+  `cpspdiag` looks up ADA's diagonal entries via the `ibsearch` macro in
+  `blksdp.h` (i.e. the standard library's `bsearch()`). `ibsearch`
+  passes it a comparator, `icmp()`, that returns `char` cast to
+  `COMPFUN` (`int(*)(const void*,const void*)`) — also undefined
+  behavior. In practice, this port's build of `bsearch()` never
+  successfully found the diagonal entries, so `absd` was always all
+  0.0 even though the diagonal entries were present and properly sorted
+  (found via `tests/test_getada.py::test_getada_no_psd_blocks`).
+  However, since `getada3` itself is only ever called when
+  `has_psd=True` (i.e. `K.s` is non-empty, so `sdpN>0` internally), this
+  `sdpN==0` branch is unreachable dead code in real usage and had no
+  practical impact. Resolved the same way as `sortnnz`/`iswnbr`:
+  `cpspdiag` is no longer ctypes-bound, and instead reimplemented in
+  Python reading the diagonal directly via `scipy.sparse`'s
+  `.diagonal()` (matching what `cpspdiag.c`'s own doc comment says it
+  was meant to do).
 
-## 7. 残っている作業(優先度が高いと思われる順)
+## 7. Remaining work (roughly in order of priority)
 
-1. ~~**Phase 3-a: 薄いMEXラッパー`.m`の公開API整備。**~~ **完了。**
-   `install_sedumi.m` のMEXビルド対象一覧と `_native.py` の全バインディング
-   を突き合わせて棚卸しした結果:実際に使われている実MEXカーネルは
-   全て `_native.py` に集約済みで、それぞれ然るべき上位モジュール
-   (`getdense.py`/`getdatm.py`/`pcg.py`/`cone.py`/`updtransfo.py`/
-   `wregion.py`/`sdinit.py`/`getada_psd.py`/`symbchol.py`/
-   `symbcholden.py` 等)から `_native.xxx()` の形で呼ばれており、
-   「バインディングはあるが未整理」という抜けは見つからなかった
-   (`incorder`/`iswnbr` の2つだけは qsortの未定義動作を避けるため
-   意図的にctypes化せず `incorder.py`/`neighborhood.py` にPython実装
-   として存在する、既知の意図的な設計)。
-   逆に `_native.py` 内で他から一切呼ばれていないバインディングが
-   7個(`realdot`/`realssqr`/`scalarmul`/`addscalarmul`/`blkmul`/
-   `mJdetd`/`cholsplit`)見つかったが、いずれも「本家SeDuMi自身に
-   おいても未使用」と確認済み(`blkmul.c`/`mJdetd.c`は
-   `install_sedumi.m`のMEXビルド対象リストにそもそも入っていない
-   =本家の時点でデッドコード、`cholsplit()`の出力`L.split`は
-   `blkchol.c`のmex引数リストに現れず本家でも読まれていない、
-   `realdot`等はBLAS的な補助関数でPhase 1のスモークテスト用に
-   バインドされただけで独立したMEXターゲットを持たない)。
-   結論として追加実装は不要と判断し、`_native.py` モジュール
-   docstringにこの棚卸し結果自体を明記した(未使用の理由を含む)。
-2. ~~**Phase 4: 高レベルAPI・入出力互換層。**~~ **完了。**
-   - トップレベルAPI: `import sedumipy; sedumipy.sedumi(A,b,c,K)` が
-     使えるようになった(従来は `sedumipy.sedumi.sedumi(...)` の
-     サブモジュール経由のみ)。`__init__.py`で`from .sedumi import sedumi`
-     しているが、`sedumipy.sedumi`サブモジュールを先に(または後に)
-     importしても関数を指すことに変わりはない(Pythonの
-     `sys.modules`キャッシュにより、親パッケージへの属性上書きは
-     サブモジュールの初回import時にしか起きないため)ことを確認済み。
-     また`sedumi()`は`pars`辞書に加えて`**kwargs`でも個別オプションを
-     渡せるようにした(例: `sedumi(A,b,c,K,eps=1e-9)`)。
-   - `.mat` I/O: `matio.py`(`read_mat`/`write_solution_mat`)。
-     SeDuMiの問題ファイルは(移植元に対応する`.m`が存在しない)ただの
-     MATLAB構造体なので、他のモジュールと違い「移植」ではなく
-     このport独自の新規実装。`A`/`At`どちらの向きの格納も、
-     `b`/`c`がスパースで保存されているケースも扱う
-     (`vendor/sedumi-upstream/examples/*.mat`で確認済み)。
-   - SDPA sparse形式(`.dat-s`)の読み書き: `sdpa.py`(`read_sdpa`/
-     `write_sdpa`)。`read_sdpa`は`conversion/fromsdpa.m`の忠実な移植
-     (Octave実機オラクルと一致確認済み、
-     `tools/generate_sdpa_oracle.m`/`tests/fixtures/sdpa/`)。
-     `write_sdpa`は本家に対応物がない新規実装(本家の
-     `conversion/writesdp.m`はSDPA形式ではなく別形式のSDPpackを書き出す
-     もので無関係)だが、実際に`vendor/sedumi-upstream/examples/
-     arch0.mat`を`write_sdpa`で書き出し、それを実機Octaveの
-     `fromsdpa.m`で読み戻して元の`(At,b,c)`と完全一致することを
-     手動で確認済み(K.q/K.rはSDPA形式で表現できないため
-     `write_sdpa`は明示的に`ValueError`で拒否する)。
-3. ~~**Phase 5: 検証・ベンチマーク。**~~ **完了。**
-   `tests/test_golden_end_to_end.py` が Phase 0 の golden reference
-   対象問題(`vendor/sedumi-upstream/examples/`)を実際に
-   `sedumipy.sedumi()` に通し、Octave実機の結果と一致することを検証
-   する(§2「Phase 5」、§6の2件のバグ修正を参照)。性能ベンチマークは
-   `tools/benchmark_examples.py`(実行方法はスクリプト自身のdocstring
-   参照)。この環境(Octaveをローカルでビルドして計測、CPU/コア数等は
-   環境依存につき絶対値は目安)での実測値:
+1. ~~**Phase 3-a: finish the public API for thin MEX-wrapper `.m`
+   files.**~~ **Done.** Cross-checking `install_sedumi.m`'s list of MEX
+   build targets against `_native.py`'s bindings found: every real MEX
+   kernel that's actually used is already collected in `_native.py`,
+   each called as `_native.xxx()` from the appropriate higher-level
+   module (`getdense.py`/`getdatm.py`/`pcg.py`/`cone.py`/
+   `updtransfo.py`/`wregion.py`/`sdinit.py`/`getada_psd.py`/
+   `symbchol.py`/`symbcholden.py`, etc.) — no "bound but not wired up"
+   gaps were found (`incorder`/`iswnbr` are the only two deliberately
+   *not* ctypes-bound, to avoid qsort undefined behavior, and instead
+   exist as pure-Python implementations in `incorder.py`/
+   `neighborhood.py` — a known, intentional design choice). Conversely,
+   7 bindings in `_native.py` (`realdot`/`realssqr`/`scalarmul`/
+   `addscalarmul`/`blkmul`/`mJdetd`/`cholsplit`) turned out to be called
+   from nowhere else, but each was confirmed **unused in real SeDuMi
+   itself** too (`blkmul.c`/`mJdetd.c` aren't even in
+   `install_sedumi.m`'s MEX build target list — dead code in the
+   original already; `cholsplit()`'s output, `L.split`, doesn't appear
+   in `blkchol.c`'s mex argument list and is never read even in real
+   SeDuMi; `realdot` etc. are BLAS-style helpers bound only for Phase
+   1's smoke test, with no independent MEX target of their own).
+   Concluded no further work is needed, and documented this inventory
+   itself, including why each is unused, in `_native.py`'s module
+   docstring.
+2. ~~**Phase 4: high-level API and I/O compatibility layer.**~~
+   **Done.**
+   - Top-level API: `import sedumipy; sedumipy.sedumi(A,b,c,K)` now
+     works (previously only reachable via the `sedumipy.sedumi`
+     submodule). `__init__.py` does `from .sedumi import sedumi`, and
+     it's confirmed that importing the `sedumipy.sedumi` submodule
+     before or after doesn't change which object the name refers to
+     (Python's `sys.modules` cache means the parent package's attribute
+     is only overwritten the first time the submodule is imported).
+     `sedumi()` also now accepts individual options via `**kwargs` in
+     addition to the `pars` dict (e.g. `sedumi(A,b,c,K,eps=1e-9)`).
+   - `.mat` I/O: `matio.py` (`read_mat`/`write_solution_mat`). SeDuMi
+     problem files are just plain MATLAB structs (there's no `.m` file
+     to port this from), so unlike other modules this is new code
+     specific to this port, not a port. Handles both `A`/`At`
+     orientations and cases where `b`/`c` are stored sparse (confirmed
+     against `vendor/sedumi-upstream/examples/*.mat`).
+   - SDPA sparse format (`.dat-s`) read/write: `sdpa.py`
+     (`read_sdpa`/`write_sdpa`). `read_sdpa` is a faithful port of
+     `conversion/fromsdpa.m` (confirmed against a real Octave oracle,
+     `tools/generate_sdpa_oracle.m`/`tests/fixtures/sdpa/`).
+     `write_sdpa` has no counterpart in real SeDuMi (real SeDuMi's
+     `conversion/writesdp.m` writes a different, unrelated format,
+     SDPpack, not SDPA) and is new code, but manually confirmed correct
+     by writing out `vendor/sedumi-upstream/examples/arch0.mat` with
+     `write_sdpa` and reading it back with real Octave's `fromsdpa.m`,
+     matching the original `(At,b,c)` exactly (`write_sdpa` explicitly
+     rejects `K.q`/`K.r` with a `ValueError`, since SDPA format can't
+     represent them).
+3. ~~**Phase 5: verification and benchmarking.**~~ **Done.**
+   `tests/test_golden_end_to_end.py` runs `sedumipy.sedumi()` against
+   the Phase 0 golden-reference problems
+   (`vendor/sedumi-upstream/examples/`) and verifies the result matches
+   real Octave (see §2 "Phase 5" and the two bugs fixed in §6).
+   Performance benchmarks live in `tools/benchmark_examples.py` (see
+   that script's own docstring for how to run it). Measured on this
+   environment (Octave built locally for comparison; absolute numbers
+   are environment-dependent on CPU/core count, treat as indicative):
 
-   | problem | m | N (=length(c)) | Python (秒) | Octave/MEX (秒) | iter |
+   | problem | m | N (=length(c)) | Python (s) | Octave/MEX (s) | iter |
    |---|---:|---:|---:|---:|---:|
    | nb | 123 | 2383 | 3.0 | 0.9 | 20 |
-   | arch0 | 174 | 56197 | 2.5 | 2.4 | 31〜32 |
+   | arch0 | 174 | 56197 | 2.5 | 2.4 | 31-32 |
    | control07 | 666 | 6125 | 9.3 | 9.2 | 40 |
    | trto3 | 544 | 398977 | 18.2 | 19.8 | 60 |
    | OH_2Pi_STO-6GN9r12g1T2 | 948 | 240720 | 34.4 | 34.8 | 20 |
 
-   最小の問題(`nb`)ではPython側のオーバーヘッド(関数呼び出し・
-   numpy配列確保・ctypes境界越えのコスト)が支配的でOctave/MEX版の
-   約3倍かかるが、問題が大きくなるにつれてCネイティブカーネルでの
-   実計算timeが支配的になり、中〜大規模問題(`arch0`以上)では
-   Octave/MEX版とほぼ同等〜やや高速という結果になった。`arch0`の
-   `iter`が31/32とOctave側と1回だけズレているのは、大規模問題での
-   浮動小数点丸め誤差の蓄積差によるもので(§6にある通り`test_sedumi_
-   matches_octave`の厳密な`iter`一致要求は小さな合成フィクスチャでの
-   話であり、実問題規模ではこの種の1反復程度のズレは想定内)、
-   `cx`/`by`は両者とも期待値に一致しているため実害はない。
-4. **Phase 6: パッケージング。** ~~`libsedumi.so`の同梱方法の検討
-   (現状はビルド済みバイナリをそのままリポジトリに置いている)~~ ――
-   この記述自体が古かった: 実際には`libsedumi.so`/`.dylib`は
-   `.gitignore`対象で**リポジトリにはコミットされておらず**、
-   `_native.py`の`_ensure_built()`が初回import時に
-   `tools/build_libsedumi.sh`を自動的に呼んでその場でビルドする
-   (開発時の`pip install -e .[test]`はこれに依存している)、という
-   のが実態だった。この方式はeditable installでは動くが、
-   本物のwheelとしてインストールされた場合には壊れる
-   (`csrc/`/`tools/`は`sedumipy`パッケージの一部として同梱されて
-   いないため、importのたびにコンパイルし直すこともできないし、
-   そもそもエンドユーザーの環境にgcc/BLASの開発ヘッダーが入っている
-   保証もない)。
+   On the smallest problem (`nb`), Python-side overhead (function calls,
+   NumPy array allocation, the cost of crossing the ctypes boundary)
+   dominates, running about 3x slower than the Octave/MEX version; as
+   problems grow, the native C-kernel compute time dominates instead,
+   and on medium-to-large problems (`arch0` and up) the two are roughly
+   on par or the port is slightly faster. `arch0`'s `iter` differs from
+   Octave's by exactly one (31 vs. 32) due to accumulated floating-point
+   rounding differences at this scale (as noted in §6, `test_sedumi_
+   matches_octave`'s exact `iter`-match requirement is specific to small
+   synthetic fixtures; a one-iteration difference like this is expected
+   at real-problem scale), and both `cx`/`by` match the expected values,
+   so there's no practical impact.
+4. **Phase 6: packaging.** ~~Investigate how to bundle `libsedumi.so`
+   (currently the prebuilt binary is committed directly to the
+   repository)~~ — that description was itself stale: in reality,
+   `libsedumi.so`/`.dylib` are gitignored and **not committed to the
+   repository**; `_native.py`'s `_ensure_built()` automatically calls
+   `tools/build_libsedumi.sh` on first import to build it on the spot
+   (development's `pip install -e .[test]` depends on this). This
+   approach works for an editable install, but **breaks for a real
+   installed wheel** (`csrc`/`tools` aren't bundled as part of the
+   `sedumipy` package, so there's nothing to recompile from on import,
+   and there's no guarantee the end user's environment even has gcc/BLAS
+   dev headers installed).
 
-   **今回やったこと:** `setup.py`に`build_ext`をオーバーライドする
-   カスタムステップ(`BuildLibsedumi`)を追加し、`pip install`/
-   `python -m build --wheel`時に`tools/build_libsedumi.sh`と同じ
-   コンパイルコマンドを1回だけ実行して`libsedumi.so`をビルド、
-   `build_lib/sedumipy/`配下に直接配置することでwheelに同梱される
-   ようにした(`_native.py`の`_ensure_built()`はそのままなので、
-   wheelから入れた場合は既にファイルがあるため何もせず、editable
-   installの場合は従来通り初回import時にビルドする、という二重の
-   動作を両立させている)。ソースを持たない`Extension`を1つ
-   登録しているのは、setuptoolsに「このwheelはプラットフォーム
-   依存(`py3-none-any`ではない)」と正しく認識させるためだけの
-   トリック。
+   **What was done:** added a custom `build_ext`-overriding step
+   (`BuildLibsedumi`) to `setup.py` that runs the same compile command
+   as `tools/build_libsedumi.sh` exactly once during `pip install`/
+   `python -m build --wheel`, building `libsedumi.so` directly into
+   `build_lib/sedumipy/` so it gets bundled into the wheel
+   (`_native.py`'s `_ensure_built()` is unchanged, so a wheel install
+   finds the file already present and does nothing, while an editable
+   install still builds it on first import as before — both paths
+   coexist). Registering one sourceless `Extension` is purely a trick to
+   make setuptools correctly mark the wheel as platform-specific (not
+   `py3-none-any`).
 
-   **この環境で実際に確認したこと:** `python -m build --wheel`で
-   `cp311-cp311-linux_x86_64`タグ付きのwheelがビルドされ
-   `libsedumi.so`が同梱されていること、そのwheelを(このリポジトリの
-   `csrc`/`tools`に一切アクセスできない)独立した仮想環境に
-   `pip install`し、`import sedumipy; sedumipy.sedumi(...)`が
-   正しく動作することを確認した(このLinux環境限定)。
+   **Confirmed in this environment:** `python -m build --wheel` builds
+   a wheel tagged `cp311-cp311-linux_x86_64` with `libsedumi.so` bundled
+   inside it, and installing that wheel with `pip install` into an
+   isolated virtualenv with no access to this repository's `csrc`/
+   `tools` at all, `import sedumipy; sedumipy.sedumi(...)` works
+   correctly (Linux only, in this environment).
 
-   **まだ検証できていないこと(この環境にDockerデーモンが無く
-   実行できなかった):** `cibuildwheel`自体の実行(`pyproject.toml`
-   に`[tool.cibuildwheel]`の設定は追加したが、manylinuxコンテナ上での
-   実際のビルドは未検証)、macOS/Windowsでのビルド(`tools/
-   build_libsedumi.sh`はgcc前提でWindowsのcl.exeには未対応)、
-   `libblas`への動的リンクによる配布可搬性の問題(`ldd`で確認した
-   限り`libblas.so.3`/`libopenblas.so.0`に動的リンクされており、
-   本当にPyPI配布可能なmanylinux wheelにするには`auditwheel repair`
-   でこれらを同梱するか静的リンクに切り替える必要がある。今回は
-   その作業までは行っていない)。
+   **Not yet verified (no Docker daemon available in this
+   environment):** actually running `cibuildwheel` itself (the
+   `[tool.cibuildwheel]` settings were added to `pyproject.toml`, but an
+   actual build inside a manylinux container is unverified), building on
+   macOS/Windows (`tools/build_libsedumi.sh` assumes gcc and doesn't
+   support Windows's `cl.exe`), and distributable portability of the
+   dynamic link against `libblas` (`ldd` shows it dynamically linked
+   against `libblas.so.3`/`libopenblas.so.0`; a real PyPI-distributable
+   manylinux wheel would need `auditwheel repair` to bundle these, or a
+   switch to static linking — not done in this pass).
 
-   **別セッションで追加でやったこと(CI導入・macOS/Windows対応):**
-   `.github/workflows/{ci,wheels,docs}.yml`を新設し、この環境に無かった
-   Docker/macOS/Windowsでの実行を実際のGitHub Actions上で行う形にした。
-   - **macOS:** `before-all`がyum/apt限定で、macOSにはどちらも存在せず
-     元の設定のままでは確実に壊れていたことが判明。`tools/build_libsedumi.sh`
-     を修正し、Homebrewなしで使えるOS標準のAccelerateフレームワーク
-     (`-framework Accelerate`)にリンクするようにした(コンパイラも
-     `gcc`ではなく`cc`。macOSの`gcc`は通常clangのエイリアスに過ぎない
-     ため)。
-   - **Windows:** `cl.exe`への移植ではなく、MSYS2のMinGW64ツールチェーン
-     (`mingw-w64-x86_64-gcc`/`mingw-w64-x86_64-openblas`)を使う方針にした
-     ―― `libsedumi.dll`は`PyInit_*`を持つCPython拡張ではなくctypesが
-     読み込むだけの素のDLLなので、Pythonをビルドしたコンパイラと合わせる
-     必要がそもそもなく、`sedumi_platform.h`のBLASシンボル名規約
-     (`FORT(x) = x##_`)もLinux/macOS/Windows共通でOpenBLASと一致する
-     ため、MSVC移植より遥かにリスクが低いと判断した。`setup.py`/
-     `_native.py`は`sys.platform == "win32"`のとき`bash tools/
-     build_libsedumi.sh ...`を明示的に`bash`経由で呼ぶように変更
-     (Windowsはshebangを解釈しない)。ビルドされる`libsedumi.dll`は
-     `libopenblas.dll`とmingwランタイムDLLに動的リンクされるため、
-     配布可能なwheelにするには`delvewheel repair`での同梱が必要
-     (`auditwheel`/`delocate`のWindows版に相当。cibuildwheelの
-     Windows向けデフォルトには含まれないため`pyproject.toml`の
-     `[tool.cibuildwheel.windows]`で明示的に設定)。
-   - **実機での動作確認について:** このリポジトリの開発はLinux環境で
-     行われており、macOS/Windows実機は使えなかった。上記の変更は
-     GitHub Actions上の実際のmacOS/Windowsランナーでの`ci.yml`/
-     `wheels.yml`実行結果が実質的な検証になる(PRを作成してCIの
-     結果を確認する運用を想定)。
-5. **`getdatm.py`のOOM修正(`DAt.q`常時sparse化)が、逆にdenseな方が
-   速い小〜中規模問題を遅化させていた件。修正済み。** `has_psd=False`
-   (LP+SOCPのみ、K.s==0)経路で`DAt.q`/`ADA`を常にsparseで組み立てる
-   ように直した結果(OOM対策としては正しい)、mが小さくADAが
-   実質denseになる問題(例: `nb.mat`, m=123)では逆に約36%遅化して
-   いた(sparse-sparse積`csr_matmat`が全体の56%を占めることを
-   `cProfile`で確認)。`getsymbada()`が一度だけ計算する構造的ADA
-   パターンの密度(既存の0.9閾値をそのまま流用)から`is_dense`を
-   一度だけ判定し、`getDAtm()`/`getada()`がそれに応じてdense
-   (numpy, BLAS matmul)/sparse(scipy, OOM回避)を切り替えるように
-   `sedumi.py`から配線した。両分岐は値としてbug-for-bug同一(既存
-   テスト・ベンチマーク全て回帰なしを確認済み)。`nb.mat`で実測:
-   sparse固定(修正直後)2.12秒→ハイブリッド化後1.75秒(修正前の
-   dense固定1.56秒に近い水準まで回復)。大規模問題(`nql180`/
-   `qssp180`, m~1.3e5)は引き続きsparse経路を通るためOOMは再発しない。
-6. ~~**DIMACS `nb_L2`のnumerr=2、根本原因を特定(修正は見送り)。**~~
-   **解決済み。修正した(§6の「全ブロック一括分岐」の項を参照)。**
-   前回セッションは原因を`widelen.py`の`all(tmp>0)`グローバル分岐まで
-   完全に特定した上で「アルゴリズム自体のカオス的感度であり、分岐の
-   numericsを変えるのは影響が読めない」として意図的に見送っていたが、
-   **この判断は保守的すぎた**。`tmp`は任意の量ではなく`((lab1-lab2)/2)^2`
-   という**完全平方**なので厳密算術では必ず非負であり、負になるのは
-   丸め誤差だけ ―― つまり「どちらの分岐を選ぶべきか」は本来一意に
-   決まる。しかも今回計測し直すと、問題の値は前回想定されていた
-   `±1.78e-15`のような微小な負数ではなく**厳密に`-0.0`**で、本家の
-   strictな`> 0`がゼロを弾いていただけだった(1つのLorentzブロックの
-   複製で構成される問題では2固有値が厳密に一致するのは日常的)。
-   `np.sqrt(np.maximum(tmp, 0.0))`とブロックごとにクランプすれば、
-   当該ブロックには本家のフォールバックと厳密に同値、他の838ブロック
-   には本家が捨てていた正確な式が残り、`sqrt`に負値を渡さない安全性も
-   保たれる。結果:**nb_L2は numerr=2/iter=10 から numerr=0/iter=16 に
-   改善**し、実機Octave/MEXビルドの反復回数(16)と公表値
-   (`-1.62897198`、この移植版は`-1.628971959`)の両方に一致した。
-   `stepdif=1`を強制する対症療法も不要になった(pars既定値は変更して
-   いない)。同じ分岐が`trydif.m`(逐語コピー)と`maxstep.m`(同型、
-   ただしフォールバックがより悪質)にもあったので3箇所とも修正済み。
-   以下は原因特定に至るまでの前回セッションの記録(そのまま残す):
+   **Additional work done in a later session (CI setup, macOS/Windows
+   support):** added `.github/workflows/{ci,wheels,docs}.yml`, moving
+   the Docker/macOS/Windows runs this environment couldn't do onto real
+   GitHub Actions runners.
+   - **macOS:** `before-all` was yum/apt-only, and neither exists on
+     macOS, so the original config was guaranteed to break there.
+     Fixed `tools/build_libsedumi.sh` to link the OS-standard Accelerate
+     framework (`-framework Accelerate`), which needs no Homebrew at
+     all (also switched the compiler to `cc` instead of `gcc`, since
+     macOS's `gcc` is normally just a clang alias).
+   - **Windows:** rather than porting to `cl.exe`, chose to use MSYS2's
+     MinGW64 toolchain (`mingw-w64-x86_64-gcc`/
+     `mingw-w64-x86_64-openblas`) — since `libsedumi.dll` is a plain
+     ctypes-loaded DLL rather than a `PyInit_*`-exporting CPython
+     extension, it never needed to match whatever compiler built
+     Python, and `sedumi_platform.h`'s BLAS symbol-naming convention
+     (`FORT(x) = x##_`) is the same across Linux/macOS/Windows and
+     matches OpenBLAS, so this was judged far lower-risk than an MSVC
+     port. `setup.py`/`_native.py` were changed to explicitly invoke
+     `bash tools/build_libsedumi.sh ...` via `bash` when
+     `sys.platform == "win32"` (Windows doesn't interpret shebangs).
+     The resulting `libsedumi.dll` dynamically links `libopenblas.dll`
+     and mingw runtime DLLs, so a distributable wheel needs
+     `delvewheel repair` to bundle them (the Windows analog of
+     `auditwheel`/`delocate`; not included in cibuildwheel's Windows
+     defaults, so configured explicitly in `pyproject.toml`'s
+     `[tool.cibuildwheel.windows]`).
+   - **On real-hardware verification:** development on this repository
+     happens on Linux, with no macOS/Windows machine available. The
+     changes above are practically verified by actual macOS/Windows
+     runners on GitHub Actions running `ci.yml`/`wheels.yml` (the
+     intended workflow is to open a PR and check the CI results).
+5. **`getdatm.py`'s OOM fix (always building `DAt.q` sparse) was, in
+   turn, slowing down small-to-medium problems where dense is actually
+   faster. Now fixed.** Making the `has_psd=False` (LP+SOCP only,
+   `K.s==0`) path always build `DAt.q`/`ADA` sparse (correct as an OOM
+   fix) ended up slowing down problems where `m` is small and ADA is
+   effectively dense (e.g. `nb.mat`, m=123) by about 36% (confirmed with
+   `cProfile`: the sparse-sparse product `csr_matmat` accounted for 56%
+   of total time). Fixed by determining `is_dense` once, from the
+   density of the structural ADA pattern `getsymbada()` computes once
+   (reusing the existing 0.9 threshold), and wiring `getDAtm()`/
+   `getada()` from `sedumi.py` to switch between dense (numpy, BLAS
+   matmul) and sparse (scipy, avoids OOM) accordingly. Both branches are
+   bug-for-bug identical in the values they produce (confirmed no
+   regressions across the full existing test suite and benchmarks).
+   Measured on `nb.mat`: 2.12s with sparse forced (right after the OOM
+   fix) → 1.75s after hybridizing (close to the original 1.56s with
+   dense forced). Large problems (`nql180`/`qssp180`, m~1.3e5) still go
+   through the sparse path, so the OOM fix still holds for them.
+6. ~~**DIMACS `nb_L2`'s numerr=2: root cause identified (fix
+   deferred).**~~ **Resolved. Fixed** (see §6's "all-or-nothing branch"
+   entry). An earlier session had fully traced the cause to
+   `widelen.py`'s `all(tmp>0)` global branch, but deliberately deferred
+   fixing it, reasoning it was "the algorithm's own chaotic sensitivity,
+   and changing the branch's numerics has unpredictable effects" —
+   **that judgment was overly conservative**. `tmp` isn't an arbitrary
+   quantity; it's `((lab1-lab2)/2)^2`, a **perfect square**, so it's
+   always non-negative in exact arithmetic, and the only way it goes
+   negative is rounding error — meaning "which branch to take" is
+   actually uniquely determined. Remeasuring this time also showed the
+   value wasn't a tiny negative number like the previously-assumed
+   `±1.78e-15`, but **exactly `-0.0`**: real SeDuMi's strict `> 0` was
+   simply rejecting zero (which happens routinely on problems built from
+   duplicates of a single Lorentz block, where two eigenvalues coincide
+   exactly). Clamping with `np.sqrt(np.maximum(tmp, 0.0))` block by
+   block leaves the affected block exactly equivalent to real SeDuMi's
+   fallback, keeps the exact expression real SeDuMi discarded for the
+   other 838 blocks, and still never passes a negative value to `sqrt`.
+   Result: **nb_L2 improved from numerr=2/iter=10 to numerr=0/iter=16**,
+   matching both the real Octave/MEX build's iteration count (16) and
+   the published value (`-1.62897198`, this port now gets
+   `-1.628971959`). This also removed the need for the earlier symptomatic
+   workaround of forcing `stepdif=1` (the `pars` defaults are unchanged).
+   The same branch also existed in `trydif.m` (a verbatim copy) and
+   `maxstep.m` (isomorphic, with an even worse fallback), so all three
+   sites were fixed. What follows is the previous session's record of
+   how the root cause was tracked down (kept as-is):
 
-   実機Octave/MEXビルド(`vendor/sedumi-upstream`、この環境に
-   `octave`/`liboctave-dev`/`libopenblas-dev`を追加導入して
-   `install_sedumi -rebuild`でビルド)と、この移植版の両方から
-   反復1〜3時点の`ADA`/`d`/`DAt.q`を書き出して直接突き合わせた結果:
-   `d.l`/`d.det`(LP・trace部分)は反復3まで浮動小数点誤差レベル
-   (~1e-13)で一致、`d.q1`/`d.q2`(Lorentz錐のスケーリング点)も
-   反復2開始時点までは同様に一致するが、反復2のステップが生成する
-   `d`(=反復3で使われる`d`)で`d.q1`の最大成分が約15%相対誤差で
-   食い違う。これがちょうど`err["kcg"]`/`Lsd["kcg"]`が実機の1/1から
-   6/5へ跳ね上がる反復と一致する ―― ここまでは前回セッションの記録。
+   Dumping `ADA`/`d`/`DAt.q` at iterations 1-3 from both the real
+   Octave/MEX build (`vendor/sedumi-upstream`, with `octave`/
+   `liboctave-dev`/`libopenblas-dev` installed in this environment and
+   built via `install_sedumi -rebuild`) and this port, and comparing
+   them directly: `d.l`/`d.det` (the LP/trace part) match to floating-
+   point tolerance (~1e-13) through iteration 3, and `d.q1`/`d.q2` (the
+   Lorentz-cone scaling point) also match the same way up through the
+   start of iteration 2, but the `d` produced by iteration 2's step
+   (i.e. the `d` used at iteration 3) has `d.q1`'s largest component
+   diverging by about 15% relative error. This lines up exactly with the
+   iteration where `err["kcg"]`/`Lsd["kcg"]` jumps from the real
+   hardware's 1/1 to 6/5. That's as far as the earlier session's record
+   went.
 
-   **今回、この続きを追って原因を完全に特定した。** 前回時点で
-   「`updtransfo.py`は`updtransfo.m`と一行ずつ突き合わせ済みで差分
-   なし」と判定されていたが、今回は行レベルの目視監査に加えて
-   **実際に動かして検証**した: 実機Octave側の`wregion.m`内に一時
-   デバッグ用`save()`を挿入し(コミットしない一時パッチ)、反復2の
-   `wregion`が返す`xscl`/`zscl`/`w`(および直前の`d`/`K`)をそのまま
-   `.mat`にダンプ、Pythonの`updtransfo()`にそれを**そのまま**渡して
-   実行したところ、実機の反復3の`d.q1`/`d.q2`とビット単位で完全一致
-   した(`max|q1|`小数第10桁まで完全一致)。つまり`updtransfo.py`は
-   本当に無罪 ―― 差分は`updtransfo`より手前、`xscl`/`zscl`/`w`
-   自体の計算にあることが確定した。
+   **This time, the investigation was carried further to a complete root
+   cause.** The earlier session had concluded "`updtransfo.py` was
+   audited line-by-line against `updtransfo.m` with no differences
+   found," but this time, beyond the line-by-line audit, it was also
+   **verified by actually running it**: a temporary debug `save()` was
+   inserted into the real Octave `wregion.m` (an uncommitted, throwaway
+   patch), dumping iteration 2's `wregion` outputs `xscl`/`zscl`/`w`
+   (and the preceding `d`/`K`) to a `.mat` file, then feeding that
+   **directly** into Python's `updtransfo()` — which reproduced real
+   iteration 3's `d.q1`/`d.q2` bit-for-bit (matching to the 10th
+   decimal digit of `max|q1|`). In other words, `updtransfo.py` really
+   is innocent — the divergence happens before `updtransfo`, in the
+   computation of `xscl`/`zscl`/`w` themselves.
 
-   次に、この移植版が自分自身で計算した反復2の`xscl`/`zscl`/`w`を
-   同様にダンプして実機の値と直接比較したところ:`xscl`/`zscl`は
-   絶対誤差~1.5e-13(浮動小数点ノイズレベル、4196次元ベクトルに対して
-   2つの独立実装が一致する限界としては極めて良好)、`w["tdetx"]`/
-   `w["tdetz"]`も同様に~1e-13〜1e-12で一致するにもかかわらず、
-   **`w["lab"]`だけが最大絶対誤差7.6という大きさで食い違っていた**。
-   `w["lab"]`は`tdetx`/`tdetz`からほぼそのまま計算される量のはずなので、
-   この不釣り合いが決定的な手がかりになった。
+   Next, dumping this port's own computed `xscl`/`zscl`/`w` at iteration
+   2 the same way and comparing directly against real Octave's values:
+   `xscl`/`zscl` differ by an absolute error of ~1.5e-13 (floating-point
+   noise level — an excellent match for two independent implementations
+   agreeing on a 4196-dimensional vector), and `w["tdetx"]`/
+   `w["tdetz"]` similarly agree to ~1e-13 to ~1e-12, yet **`w["lab"]`
+   alone diverged by as much as 7.6 in absolute error**. Since
+   `w["lab"]` should be computed almost directly from `tdetx`/`tdetz`,
+   this disproportion was the decisive clue.
 
-   `widelen.py`の`_build_w()`(`widelen.m`の該当部分をそのまま移植した
-   箇所)を見ると、Lorentz錐の固有値相当量`lab2q`は
+   Looking at `widelen.py`'s `_build_w()` (a direct port of the
+   corresponding part of `widelen.m`), the Lorentz-cone eigenvalue-like
+   quantity `lab2q` is computed as
 
    ```python
    tmp = halfxz**2 - detxz
    if np.all(tmp > 0):        # widelen.m: if all(tmp > 0)
        lab2q = halfxz + np.sqrt(tmp)
    else:
-       lab2q = halfxz          # 839ブロック全部がこのフォールバックになる
+       lab2q = halfxz          # all 839 blocks fall back here
    ```
 
-   という、**839個のLorentz錐ブロック全体に対する単一のグローバルな
-   all-or-nothing分岐**になっている(1ブロックでも判別式`tmp`が
-   非正なら、他の838ブロックも含めて全部が精度の低いフォールバック式
-   になる)。実際に反復2の`xscl`/`zscl`から`tmp`を計算してみると、
-   839要素中838番目のブロック(0-indexで396番目)の`tmp`が
-   実機ビルドでは`+1.78e-15`、この移植版では`-1.78e-15`と、
-   **符号だけが反転するギリギリの値**になっていた(残り838ブロックの
-   `tmp`はどちらも十分正)。`xscl`/`zscl`自体は~1e-13レベルで一致して
-   いるのに、この1ブロックだけがちょうどゼロをまたぐ位置にあった
-   ため、2つの独立した浮動小数点パイプライン(NumPy/SciPy+自前Cカー
-   ネル vs Octave+実機BLAS、内部の総和順序やBLAS実装が異なる)の
-   ごく僅かな丸め誤差の違いだけで`all(tmp>0)`の真偽が分かれ、
-   その結果`lab2q`(ひいては`w["lab"]`全体)が全く別の式で計算される
-   ことになり、以降の`updtransfo`でのスケーリング点更新が大きく
-   分岐してしまう ―― というのが今回突き止めた完全な因果連鎖。
-   (実際に実機の`xscl`/`zscl`をこの移植版の`_build_w()`にそのまま
-   与えると`w["lab"]`はビット単位で実機と完全一致し、逆にこの移植版
-   自身の`xscl`/`zscl`を与えると`tmp[396]`が負に転じて`all(tmp>0)`が
-   Falseになることも確認済み。)
+   a **single global all-or-nothing branch across all 839 Lorentz-cone
+   blocks** (if even one block's discriminant `tmp` is non-positive,
+   every other block, all 838 of them, also gets pushed to the less
+   accurate fallback expression). Actually computing `tmp` from
+   iteration 2's `xscl`/`zscl` showed block 838 of 839 (0-indexed block
+   396)'s `tmp` was `+1.78e-15` on real hardware but `-1.78e-15` in this
+   port — **a value on the exact knife-edge where only the sign
+   flips** (every other block's `tmp` was comfortably positive on both
+   sides). Even though `xscl`/`zscl` themselves agree to ~1e-13, this
+   one block happened to sit exactly on the zero crossing, so a tiny
+   rounding difference between two independent floating-point pipelines
+   (NumPy/SciPy plus this port's own C kernels, vs. Octave plus real
+   hardware BLAS, differing in internal summation order and BLAS
+   implementation) alone flips `all(tmp>0)`'s truth value, causing
+   `lab2q` (and hence all of `w["lab"]`) to be computed by a completely
+   different expression, which then makes the scaling-point update in
+   the following `updtransfo` diverge substantially — this is the
+   complete causal chain identified this time. (Confirmed directly:
+   feeding real hardware's `xscl`/`zscl` into this port's own
+   `_build_w()` reproduces real hardware's `w["lab"]` bit-for-bit, and
+   conversely, feeding this port's own `xscl`/`zscl` back in reproduces
+   `tmp[396]` flipping negative and `all(tmp>0)` becoming False.)
 
-   **この`all(tmp>0)`というグローバル分岐自体は`widelen.m`本家に
-   そのまま存在する設計**(1ブロックでも判別式が負になり得るなら、
-   `sqrt`にNaN/複素数を渡すリスクを避けるため全ブロックを一括で
-   保守的なフォールバック式に倒す、という意図的な安全策と読める)
-   であり、この移植が独自に導入した誤りではない。2つの独立実装が
-   ちょうどゼロをまたぐ量について反対側の丸め誤差を持つ、という
-   状況そのものは(適切な乱数シードで再現できる)本質的にアルゴリズム
-   側のカオス的感度であり、`updtransfo.py`/`widelen.py`/`tdet`/`ddot`
-   等のどの一行を直しても解消しない類のものと判断する。したがって
-   **意図的に修正を見送る**(§7旧項目6で既に触れていた「`stepdif=1`を
-   強制すればnb_L2は解けるが、それはpars既定値を全問題に対して変更
-   する副作用が大きいので採用しない」という判断と同じ理由 ―― 症状に
-   対する場当たり的な修正ではなく、原因を完全に特定した上で「今の
-   実装のままで良い」と判断した点が今回のセッションの進捗)。
-7. ~~**`nql180`/`qssp180`のnumerr=2、再検証したら実は直っていた
-   (`nql180old`は実質的なロバスト性のギャップとして依然未解決、
-   `qssp180old`は検証完了・移植バグではないと確認)。**~~
-   **`nql180old`のギャップも解決済み**(この項目末尾の「追記」を参照。
-   §6の「全ブロック一括分岐」修正による)。以下は経緯の記録:
-   前回セッションの記録(「OOM修正後も数反復でnumerr=2」)は古い情報
-   だった。実際に上記5.のdense/sparseハイブリッド化後の版で
-   `matio.read_mat()`経由で読み込んで実行したところ:
-   - `nql180`(m=226,802、PSDブロックなし): **numerr=0, iter=16, 約39秒**
-     で正常収束(DIMACS READMEの参照値が"N/A"のため、`cx`≈`by`・
-     `feasratio`→1・`r0`=1e-8という内部無矛盾性で確認)。
-   - `qssp180`: **numerr=0, iter=42, 約249秒**で正常収束(同様に
-     参照値なしのため内部無矛盾性で確認)。
-   一方、`nql30old`/`qssp30old`と同じ「old(旧式・非推奨)formulation」
-   系列の`nql180old`は、この環境で実機Octave/MEXビルド
-   (`install_sedumi -rebuild`、§6同様)と突き合わせたところ、
-   **どちらも同じようには失敗しない**:実機は`iter=54`まで粘って
-   `numerr=1`(精度は`pars.bigeps`止まりだが破綻はしない、コンソールに
-   `skip=5361`という大量のCholeskyピボットスキップが出るほど数値的に
-   厳しい問題ではある)で終えるのに対し、この移植版は`iter=27`
-   (`feasratio=0.90`, `r0=0.53`)で`numerr=2`(完全失敗)を返す ――
-   `nql30old`/`qssp30old`のような「本家でも同じく失敗するので移植バグ
-   ではない」という単純な話ではなく、本家より早く・悪く失敗している
-   という**実質的なロバスト性のギャップ**が残っている。`qssp180old`
-   (このファミリーで最大、~36MB)は前回セッションの調査時間予算
-   (Python版・実機版とも550秒)内にどちらも完走せず未検証だったが、
-   **今回のセッションでより大きな時間予算を与えて両方とも完走させ、
-   決着させた**: 実機Octave/MEXビルドは**iter=30、numerr=2**で失敗
-   (`install_sedumi -rebuild`済みの環境で`tic`/`toc`実測1705秒)。
-   この移植版も同じファイルを`matio.read_mat()`経由で読み込んで実行
-   したところ**iter=30、numerr=2**で失敗(実測3557秒、反復ごとの
-   経過時間を`wregion()`にモンキーパッチして記録し、順調に反復が
-   進み続けていて途中でハングしていないことも確認済み)。**失敗する
-   反復番号(30)まで完全に一致**しており、`nql180old`のような
-   「本家より早く・悪く失敗する」ロバスト性のギャップは見られない
-   ―― `qssp30old`/`nql30old`と同じ、本家でも同じように失敗する
-   ジャンルの問題であることが確定した(移植バグではない)。
-   **追記:`nql180old`のロバスト性ギャップも解消した(§6・上記項目6の
-   `all(tmp>0)`修正による)。** この項目が「本家より早く・悪く失敗する
-   =実質的なロバスト性のギャップ」として残していた唯一の未解決事項
-   だったが、3箇所の分岐をブロック単位クランプに直した状態で計測し
-   直すと:
+   **This `all(tmp>0)` global branch itself exists as-is in real
+   `widelen.m`** (readable as a deliberate safety measure: if even one
+   block's discriminant could go negative, fall back to a conservative
+   expression across all blocks at once, to avoid ever passing a
+   NaN/complex value to `sqrt`) — this is not an error this port
+   introduced on its own. The situation of two independent
+   implementations landing on opposite sides of rounding error for a
+   quantity that sits exactly on a zero crossing is, in itself
+   (reproducible with the right random seed), inherent chaotic
+   sensitivity in the algorithm, and was judged as something no single
+   line of `updtransfo.py`/`widelen.py`/`tdet`/`ddot` etc. could resolve.
+   So **the decision at the time was to deliberately defer a fix** (the
+   same reasoning as the item previously in §7 noting "forcing
+   `stepdif=1` would solve nb_L2, but changing a `pars` default for
+   every problem is too large a side effect to accept" — this session's
+   progress was in fully identifying the cause and concluding "the
+   current implementation is fine as is," rather than a band-aid fix for
+   the symptom).
+7. ~~**`nql180`/`qssp180`'s numerr=2 — re-checked and it turned out to
+   already be fixed (`nql180old` remained an open, real robustness gap;
+   `qssp180old` is now verified, confirmed not a porting bug).**~~
+   **The `nql180old` gap is also resolved** (see the "addendum" at the
+   end of this item, resulting from the §6 "all-or-nothing branch"
+   fix). What follows is the history:
+   The earlier session's record ("still numerr=2 after a few iterations
+   even after the OOM fix") was stale. Running these with the item-5
+   dense/sparse hybridization in place, loaded via `matio.read_mat()`:
+   - `nql180` (m=226,802, no PSD blocks): converges cleanly with
+     **numerr=0, iter=16, ~39s** (confirmed via internal consistency —
+     `cx`≈`by`, `feasratio`→1, `r0`=1e-8 — since the DIMACS README's
+     reference value is "N/A").
+   - `qssp180`: converges cleanly with **numerr=0, iter=42, ~249s**
+     (likewise confirmed via internal consistency, no reference value
+     available).
+   On the other hand, `nql180old`, part of the same "old (legacy,
+   deprecated) formulation" family as `nql30old`/`qssp30old`, was
+   compared against a real Octave/MEX build in this environment
+   (`install_sedumi -rebuild`, as in §6): **the two do not fail the same
+   way** — real hardware grinds on to `iter=54` and ends with `numerr=1`
+   (accuracy capped at `pars.bigeps` but not a hard failure, though
+   numerically demanding enough that the console prints `skip=5361`
+   worth of skipped Cholesky pivots), while this port returns
+   `numerr=2` (a complete failure) at `iter=27` (`feasratio=0.90`,
+   `r0=0.53`) — unlike `nql30old`/`qssp30old`, where "real SeDuMi fails
+   the same way too, so it's not a porting bug," this was a **genuine
+   robustness gap**, failing earlier and worse than real SeDuMi.
+   `qssp180old` (the largest problem in this family, ~36MB) didn't
+   finish within the earlier session's time budget (550s for both the
+   Python and real-hardware versions) and was left unverified, but
+   **this session gave it a larger time budget and let both run to
+   completion, settling the question**: the real Octave/MEX build fails
+   with **iter=30, numerr=2** (1705s measured with `tic`/`toc` on an
+   environment with `install_sedumi -rebuild` already run). Running the
+   same file through this port via `matio.read_mat()` also failed with
+   **iter=30, numerr=2** (3557s measured; monkey-patching `wregion()` to
+   log per-iteration elapsed time confirmed the iterations were
+   proceeding steadily rather than hanging partway through). **The
+   failing iteration number (30) matches exactly**, with none of the
+   "fails earlier and worse than real SeDuMi" robustness gap seen on
+   `nql180old` — confirming this is the same genre of problem as
+   `qssp30old`/`nql30old`, where real SeDuMi fails the same way too (not
+   a porting bug).
+   **Addendum: the `nql180old` robustness gap is also resolved** (via
+   the `all(tmp>0)` fix in §6/item 6 above). This had been the one open
+   item this section still listed as "fails earlier and worse than real
+   SeDuMi = a genuine robustness gap," but remeasuring with all three
+   sites clamped block-by-block:
 
    | nql180old | numerr | iter | cx vs by |
    |---|---|---|---|
-   | 本家の分岐(3箇所とも) | **2**(完全失敗) | 12 | 18.08 vs 7.08 |
-   | ブロック単位クランプ | **1** | 42 | 8桁一致 |
-   | 実機Octave/MEXビルド | 1 | 54 | ― |
+   | Real SeDuMi's branch (all 3 sites) | **2** (complete failure) | 12 | 18.08 vs 7.08 |
+   | Block-wise clamp | **1** | 42 | match to 8 digits |
+   | Real Octave/MEX build | 1 | 54 | - |
 
-   本家挙動では反復12で `cx`/`by` が2.5倍も乖離したまま破綻するのに
-   対し、クランプ版は `cx=0.9311428505`/`by=0.9311428684` と8桁一致
-   まで収束して`numerr=1`で終える ―― **実機ビルド(iter=54)より
-   少ない42反復で同じ`numerr=1`に到達**しており、「本家より早く・悪く
-   失敗する」ギャップは解消した(DIMACS READMEの参照値は"N/A"のため
-   内部無矛盾性で確認)。この問題ではフォールバックの発火率が異常に
-   高く(`widelen`は12回中6回=50%、`maxstep`は50回中5回)、本家の
-   分岐が常時暴発していたことが分かる。
-   `qssp30old`も同修正で`numerr=2`→`numerr=1`になり、しかも
-   **DIMACS READMEの公表値`6.4966749`に一致する解**(`cx=6.496695`)を
-   返すようになった ―― この問題は**実機Octave/MEXビルド自身が
-   `numerr=2`で失敗する**ので、ここは「本家と同等」ではなく
-   **本家超え**である。`nql30old`(公表値`0.9460`)と併せて、
-   `tests/test_benchmarks.py`の除外リストから公表値付きの
-   パラメトライズドテストへ昇格させた。
-8. **`qssp180old`のcProfileから発覚したPythonレベルの性能バグ2件を
-   修正(移植版が本家より約2.1倍遅かった件の主因、修正済み)。**
-   項目7でqssp180oldの`numerr=2`一致を確認した際、「なぜこの移植版は
-   本家より約2.1倍遅いのか(実機1705秒 vs 移植版3557秒)」という
-   追加の疑問が出たため、最初の5反復だけを`cProfile`で計測した
-   (`pars["maxiter"]=5`で打ち切り、462秒)。判明した2つの問題点は
-   いずれも計算結果に一切影響しない、純粋なPythonレベルのオーバー
-   ヘッドだった:
+   Where real SeDuMi's behavior breaks down at iteration 12 with `cx`/
+   `by` still 2.5x apart, the clamped version converges to `cx=
+   0.9311428505`/`by=0.9311428684` (matching to 8 digits) and ends with
+   `numerr=1` — **reaching the same `numerr=1` in fewer iterations (42)
+   than the real hardware build (54)** — closing the "fails earlier and
+   worse than real SeDuMi" gap (confirmed via internal consistency,
+   since the DIMACS README's reference value is "N/A" for this
+   problem). This problem triggers the fallback at an unusually high
+   rate (`widelen`: 6 of 12 calls = 50%; `maxstep`: 5 of 50), showing
+   real SeDuMi's branch was firing constantly here.
+   The same fix also turns `qssp30old` from `numerr=2` into `numerr=1`,
+   and moreover now returns **a solution matching the DIMACS README's
+   published value of `6.4966749`** (`cx=6.496695`) — since **the real
+   Octave/MEX build itself fails with `numerr=2`** on this problem, this
+   case isn't "on par with real SeDuMi" but **better than real SeDuMi**.
+   Together with `nql30old` (published value `0.9460`), both were
+   promoted from `tests/test_benchmarks.py`'s exclusion list to
+   parametrized tests checked against their published values.
+8. **Fixed two Python-level performance bugs found via `qssp180old`'s
+   cProfile output (the main reason this port was about 2.1x slower
+   than real SeDuMi; now fixed).**
+   While confirming `qssp180old`'s `numerr=2` match in item 7, an
+   additional question came up: "why is this port about 2.1x slower
+   than real SeDuMi (1705s on real hardware vs. 3557s in this port)?"
+   Profiling just the first 5 iterations with `cProfile`
+   (`pars["maxiter"]=5` to cut it short, 462s) found two issues, both
+   pure Python-level overhead with zero effect on the computed result:
 
-   - **`_native.fwsolve()`/`bwsolve()`が`L_csc.indptr`/`.indices`/
-     `.data`を毎回`np.ascontiguousarray(..., dtype=np.uintp)`で
-     再変換していた。** `numeric_cholesky()`が返す`L_csc`
-     (`scipy.sparse.csc_matrix`)は1回の外側反復のPCGループ全体で
-     使い回される同一オブジェクトで、変わるのは右辺ベクトルだけ
-     ―― にもかかわらず、`scipy.sparse.csc_matrix`はコンストラクタに
-     `uintp`型のindicesを渡しても実際にはint32/int64に正規化して
-     しまう(実際に確認済み)ため、`_as_index_array()`の`uintp`への
-     再キャストが毎回のfwsolve/bwsolve呼び出しで律儀に発生していた。
-     `qssp180old`は`nnz(L)~8.3e7`と非常に大きいため、
-     `numpy.ascontiguousarray`だけでプロファイル対象462秒中130秒
-     (28%)を占めていた。**修正**: 変換済み配列を`L_csc`オブジェクト
-     自身の属性としてキャッシュする(`_cached_csc_solve_arrays()`)。
-     `L_csc`は外側反復ごとに新しいオブジェクトが作られるので
-     キャッシュが古くなることはなく、`deninfac.py`/`sdfactor.py`が
-     `L_csc.data`/`.indices`を書き換えないことも確認済み。
-   - **`_native.qblkmul()`(Lorentz錐ブロックごとのスカラー倍、
-     `qblkmul.c`のmexFunctionに対応するCの独立関数が存在しないため
-     NumPyへ直接移植していた箇所)が`for k in range(nblk)`という
-     Pythonのforループでブロックを1つずつ処理していた。**
-     `qssp180old`はLorentz錐ブロックが65,341個もあり、この関数の
-     ループ本体だけでプロファイル対象462秒中49.7秒(334回呼び出し)を
-     占めていた。**修正**: `np.repeat(mu, block_sizes) * d`で
-     ベクトル化(各ブロックの`mu[k]`をブロック幅ぶん複製してから
-     一括で掛け算する、同じ演算順序で同じ値を計算するだけの書き換え)。
-     ベクトル化の過程で、一部の呼び出し元が「1ブロック分の長さぶん
-     しか使わないのに、それより長い`d`を渡している」パターン
-     (元のforループは黙って余分な末尾を無視していた)を見落として
-     一度リグレッションを起こしたが、フルテストスイート(247件)が
-     即座に検出したので`d = d[:span]`で明示的に揃えて解決。
+   - **`_native.fwsolve()`/`bwsolve()` were re-converting
+     `L_csc.indptr`/`.indices`/`.data` via
+     `np.ascontiguousarray(..., dtype=np.uintp)` on every call.** The
+     `L_csc` (`scipy.sparse.csc_matrix`) returned by
+     `numeric_cholesky()` is the same object reused across an entire
+     outer iteration's PCG loop, with only the right-hand-side vector
+     changing — but since `scipy.sparse.csc_matrix` actually normalizes
+     any `uintp`-typed indices passed to its constructor back to
+     int32/int64 (confirmed directly), `_as_index_array()`'s recast back
+     to `uintp` was faithfully happening on every single fwsolve/bwsolve
+     call. Since `qssp180old` has a very large `nnz(L)~8.3e7`,
+     `numpy.ascontiguousarray` alone accounted for 130 of the profiled
+     462 seconds (28%). **Fix**: cache the converted arrays as
+     attributes on the `L_csc` object itself
+     (`_cached_csc_solve_arrays()`). Since a new `L_csc` object is
+     created for every outer iteration, the cache can never go stale,
+     and it was confirmed that `deninfac.py`/`sdfactor.py` never mutate
+     `L_csc.data`/`.indices`.
+   - **`_native.qblkmul()` (per-Lorentz-block scalar multiplication,
+     ported directly to NumPy since `qblkmul.c`'s `mexFunction` has no
+     standalone C function counterpart) processed blocks one at a time
+     in a Python `for k in range(nblk)` loop.** `qssp180old` has as many
+     as 65,341 Lorentz-cone blocks, and this loop body alone accounted
+     for 49.7 of the profiled 462 seconds (across 334 calls). **Fix**:
+     vectorized as `np.repeat(mu, block_sizes) * d` (replicating each
+     block's `mu[k]` across that block's width, then multiplying in one
+     shot — the same computation, same order, same values, just
+     rewritten). While vectorizing, this briefly introduced a regression
+     by missing a pattern where a caller passes a longer `d` than a
+     single block's length (the original loop silently ignored the
+     extra tail) — but the full test suite (247 tests) caught it
+     immediately, and it was fixed by explicitly trimming with
+     `d = d[:span]`.
 
-   **効果**: `qssp180old`の最初の5反復のcProfileで**462秒→153秒
-   (3.0倍高速化)**。`numpy.ascontiguousarray`の自己時間は130秒→
-   4.2秒に、`qblkmul`はトップ項目から完全に消滅。残った最大のコストは
-   `numeric_cholesky`(本物のCカーネルによるCholesky分解、75.5秒)
-   ―― これが支配的になるのはむしろ健全(本家でも同様にここが
-   支配的)。フルテストスイート(247件)、`pytest -m mini`
-   (SDPLIB/DIMACS公開参照値との照合46問題)、`pytest -m extended`
-   (同16問題、LP+SOCP比率の高い問題も含む)いずれも回帰なしで合格
-   済み。qssp180oldの`numerr=2`一致自体(項目7)には影響なし
-   (計算結果はbug-for-bug同一)。
-9. **項目8の続き: 残っていた性能ボトルネックを調査 ―― ADA/DAt.qの
-   疎行列再構築は本家自身の設計、`numeric_cholesky`のuintp/int64
-   往復は一部のみ削減可能と判明。**
+   **Effect**: `qssp180old`'s first-5-iteration cProfile went from
+   **462s to 153s (3.0x faster)**. `numpy.ascontiguousarray`'s own time
+   dropped from 130s to 4.2s, and `qblkmul` disappeared from the top of
+   the profile entirely. The largest remaining cost is
+   `numeric_cholesky` (the real C-kernel Cholesky factorization, 75.5s)
+   — which is actually the healthy outcome, since that's the dominant
+   cost in real SeDuMi too. The full test suite (247 tests),
+   `pytest -m mini` (46 problems checked against published SDPLIB/DIMACS
+   reference values), and `pytest -m extended` (16 more, including
+   problems with a high LP+SOCP ratio) all pass with no regressions.
+   This has no effect on `qssp180old`'s `numerr=2` match itself (item
+   7) — the computed result is bug-for-bug identical.
+9. **Continuing item 8: investigated the remaining performance
+   bottleneck — rebuilding ADA/DAt.q as sparse matrices turns out to be
+   real SeDuMi's own design, and the `numeric_cholesky` uintp/int64
+   round-trip can only be partially reduced.**
 
-   修正後(項目8)の`qssp180old`最初5反復のcProfile(153秒)を
-   さらに分析し、残っている主要コストの性質を切り分けた:
+   Further analyzing the post-item-8 `qssp180old` first-5-iteration
+   cProfile (153s) to characterize the remaining major costs:
 
-   - **ADA/DAt.qを毎反復scipy疎行列として一から組み立て直している
-     コスト(`numpy.array`経由でscipy内部が8.8秒)は、本家SeDuMi自身の
-     設計そのものであることを確認した。** `sum(K.s)==0`
-     (`qssp180old`が通る経路)用の`vendor/sedumi-upstream/getada.m`
-     (MEXではなく素の`.m`)を実際に読んだところ、`global ADA_sedumi_`
-     を`ADA_sedumi_ = sparse([],[],[],m,m,nnz(ADA_sedumi_))`で**毎回
-     空の疎行列として新規作成**し、`ADA_sedumi_ + DAt.q'*DAt.q`/
-     `ADA_sedumi_ + Alq'*diag(sparse(scalingvector))*Alq`という疎×疎
-     演算で組み立て直していた ―― まさにこの移植版の`getada.py`
-     (`scipy.sparse`での同等の疎×疎演算)と同じパターン。
-     `getDAtm.m`も`extractA`(MEX)で抽出した後
-     `spdiags(d.q1,0,nq,nq) * DAt.q`(疎対角行列を毎回新規作成して
-     掛ける)という、同じく都度組み立て直す実装だった。したがって
-     このコストはポーティングの非効率ではなく**忠実な移植の結果**
-     であり、修正の対象外と判断する。
-     (余談: PSDブロックがある`sum(K.s)!=0`経路の`getada1.c`/
-     `getada2.c`/`getada3.c`は対照的に、`getsymbada`が一度だけ確定
-     させた疎パターンを使い回し、`ADA_sedumi_`という同じグローバル
-     配列に**値だけ**書き込む「その場更新」設計になっている ――
-     本家は「PSDありなら使い回す、PSDなしなら毎回作り直す」という
-     非対称設計になっており、`qssp180old`が使う後者は本家の時点で
-     最適化されていない、ということのようだ。)
-   - **`numeric_cholesky`内の`Lir.astype(np.int64)`/
-     `Ljc.astype(np.int64)`(項目8の`astype`18秒のほぼ全て)は、
-     `scipy.sparse.csc_matrix`が索引配列をuintpでは保持せず必ず
-     int32/int64に正規化してしまう(実測確認済み)ことに起因する、
-     このコンテナ型を使う以上避けられないコスト**であり、項目8の
-     見積もり(この`astype`往復を丸ごと削減できる)は誤りだった。
-     実際に削減できたのは、`fwsolve()`/`bwsolve()`のキャッシュ
-     (`_cached_csc_solve_arrays()`)が反復ごとの初回アクセス時に
-     `L_csc.indptr`/`.indices`(int64)からuintpへ再変換していた分
-     (1反復につき1回、計5回)だけだった。**修正**: `numeric_cholesky`
-     が`L_csc`構築の直前にすでに持っているuintp版のLjc/Lirを、
-     そのままキャッシュへ直接注入する(`L_csc._sedumipy_solve_cache`
-     を`numeric_cholesky`自身が埋める)ことで、この最後の再変換を
-     省略。**効果は153秒→138秒(約10%減)** ―― 当初見積もった16%には
-     届かなかった。これ以上削るには`Lnum["L"]`をscipy疎行列から
-     uintpをそのまま保持する自前の軽量構造体に置き換える必要がある
-     (影響範囲がテストコード等にも及ぶ可能性がある、より大きな型
-     変更のリファクタリングになるため、今回は見送り)。
+   - **The cost of rebuilding ADA/DAt.q as scipy sparse matrices from
+     scratch every iteration (8.8s inside scipy internals via
+     `numpy.array`) turns out to be real SeDuMi's own design.**
+     Reading the real `.m`-only (not MEX) `vendor/sedumi-upstream/
+     getada.m` used by the `sum(K.s)==0` path (`qssp180old`'s path)
+     shows it **creates a brand-new empty sparse matrix every time**
+     via `ADA_sedumi_ = sparse([],[],[],m,m,nnz(ADA_sedumi_))` on a
+     `global ADA_sedumi_`, and rebuilds it via the sparse-times-sparse
+     operations `ADA_sedumi_ + DAt.q'*DAt.q`/`ADA_sedumi_ +
+     Alq'*diag(sparse(scalingvector))*Alq` — exactly the same pattern
+     as this port's `getada.py` (the equivalent sparse-times-sparse
+     operations in `scipy.sparse`). `getDAtm.m` similarly rebuilds from
+     scratch every time, after extracting via `extractA` (MEX):
+     `spdiags(d.q1,0,nq,nq) * DAt.q` (creating a fresh sparse diagonal
+     matrix and multiplying, every call). So this cost isn't a porting
+     inefficiency but **the result of a faithful port**, and is judged
+     out of scope for further fixing. (Aside: by contrast, the
+     PSD-block-bearing `sum(K.s)!=0` path's `getada1.c`/`getada2.c`/
+     `getada3.c` reuse the sparse pattern that `getsymbada` fixes once,
+     writing **only the values** in place into the same global array
+     `ADA_sedumi_` — real SeDuMi has an asymmetric design here, reusing
+     when PSD blocks are present and rebuilding from scratch when they
+     aren't; the latter path, which `qssp180old` uses, appears to simply
+     never have been optimized in real SeDuMi itself.)
+   - **`numeric_cholesky`'s `Lir.astype(np.int64)`/
+     `Ljc.astype(np.int64)` calls (nearly all of item 8's 18s of
+     `astype` time) are an unavoidable cost of using this container
+     type**, stemming from `scipy.sparse.csc_matrix` never actually
+     keeping index arrays as `uintp` — it always normalizes them to
+     int32/int64 (confirmed directly) — so item 8's estimate (that this
+     entire `astype` round-trip could be eliminated) was wrong. What
+     could actually be eliminated was only the portion where
+     `fwsolve()`/`bwsolve()`'s cache (`_cached_csc_solve_arrays()`) was
+     re-converting `L_csc.indptr`/`.indices` (int64) back to `uintp` on
+     its first access each iteration (once per iteration, 5 times
+     total). **Fix**: have `numeric_cholesky` inject the `uintp`-typed
+     Ljc/Lir it already holds right before constructing `L_csc` directly
+     into the cache itself (`numeric_cholesky` populates
+     `L_csc._sedumipy_solve_cache` itself), skipping this last
+     re-conversion. **Effect: 153s to 138s (about 10% reduction)** —
+     short of the originally estimated 16%. Cutting further would
+     require replacing `Lnum["L"]`'s scipy sparse matrix with a custom
+     lightweight structure that keeps `uintp` natively (a larger type-
+     level refactor whose blast radius could reach the test code too —
+     deferred for now).
 
-   フルテストスイート(247件)、`pytest -m mini`(46問題)で回帰なし
-   を確認済み。
+   Confirmed no regressions on the full test suite (247 tests) and
+   `pytest -m mini` (46 problems).
+
+## 8. Running the tests (and regenerating oracle fixtures)
 
 ```
 cd sedumipy
-git submodule update --init --recursive   # 初回のみ: vendor/sedumi-upstream を取得
-.venv/bin/pip install -e .[test]           # libsedumi.so は初回import時に自動ビルドされる
+git submodule update --init --recursive   # first time only: fetches vendor/sedumi-upstream
+.venv/bin/pip install -e .[test]           # libsedumi.so is built automatically on first import
 .venv/bin/python -m pytest tests/ -q
 ```
 
-Octaveがインストールされていない環境でもテストは通る(オラクル
-データは `.mat` として事前生成・コミット済みで、テストは実行時に
-Octaveを呼ばない)。オラクルを**再生成**する場合のみ Octave
-(`vendor/sedumi-upstream` 側で `install_sedumi` 実行済みの状態)が必要:
+The test suite passes even without Octave installed (oracle data is
+pre-generated and committed as `.mat` files, and the tests never call
+Octave at runtime). Octave is only needed to **regenerate** an oracle
+(with `install_sedumi` already run under `vendor/sedumi-upstream`):
 
 ```
 octave-cli --no-gui --eval "cd tools; generate_<name>_oracle"
 ```
 
-## 9. コーディング規約・命名の慣習
+## 9. Coding conventions and naming
 
-- **K(コーン構造体)は Python の `dict`** で表現する。フィールド名は
-  `.m` 版の `K.f`/`K.l`/`K.q`/... とできるだけ同じにする
-  (`K["l"]`, `K["mainblks"]` など)。`pretransfo.py` が計算する
-  内部専用フィールド(`mainblks`, `qblkstart`, `sblkstart`, `lq`,
-  `N`, `rsdpN` 等)はそのまま下流の全関数に引き回す。
-- **インデックスは基本 0-indexed(Python流)**。ただし `K` の中身
-  (`mainblks` 等)は元の `.m` の1-indexed値をそのまま持っていることが
-  多く、使う側で `int(x) - 1` のような変換をその都度行っている
-  (統一的な変換層はまだ無い)。新しいコードを書くときは既存の
-  近い関数のインデックス変換パターンを真似ること。
-- **疎行列は `scipy.sparse.csc_matrix`** を基本形式とする。
-- **全てのCカーネル呼び出しは `_native.py` に集約**し、他のモジュール
-  は `_native.py` 経由でのみCコードに触れる。
-- **各moduleのdocstringに「何を実装し、何を意図的に実装していないか」
-  を明記する**のがこのプロジェクトの一貫した文化。読んだだけで
-  スコープが分かるようにしておくこと。
+- **`K` (the cone-structure struct) is represented as a Python `dict`.**
+  Field names match the `.m` version's `K.f`/`K.l`/`K.q`/... as closely
+  as possible (`K["l"]`, `K["mainblks"]`, etc.). Internal-only fields
+  computed by `pretransfo.py` (`mainblks`, `qblkstart`, `sblkstart`,
+  `lq`, `N`, `rsdpN`, etc.) are threaded through unchanged to every
+  downstream function.
+- **Indexing is 0-indexed (Python-style) by default.** However, the
+  contents of `K` (e.g. `mainblks`) often still carry the original
+  `.m` file's 1-indexed values as-is, and callers convert with something
+  like `int(x) - 1` at each use site (there's no unified conversion
+  layer yet). When writing new code, mimic the indexing-conversion
+  pattern of the nearest existing similar function.
+- **`scipy.sparse.csc_matrix` is the default sparse-matrix format.**
+- **Every C-kernel call is collected in `_native.py`**; other modules
+  only ever touch C code through `_native.py`.
+- **Every module's docstring states what it implements and what it
+  deliberately does not** — this project's consistent culture. A reader
+  should be able to tell the scope just from reading it.

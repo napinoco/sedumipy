@@ -2,6 +2,8 @@
 SDPA-formatted file (the format SDPLIB and most other public SDP
 benchmark collections use) into SeDuMi's own (At, b, c, K) form.
 
+::
+
     At, b, c, K = read_sdpa("arch0.dat-s")
     x, y, info = sedumipy.sedumi(At, b, c, K)
 

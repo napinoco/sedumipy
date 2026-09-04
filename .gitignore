@@ -14,6 +14,12 @@ src/sedumipy/libsedumi.dylib
 # pytest_terminal_summary hook
 benchmark_results.csv
 
+# ad hoc Octave/MEX-side timing comparisons (same nature as
+# benchmark_results.csv above -- environment-specific, regenerated on demand).
+# Root-anchored: docs/_static/benchmark_results_octave.csv is a real,
+# tracked artifact linked from docs/usage.rst, not an ad hoc scratch file.
+/benchmark_results_octave*.csv
+
 # Sphinx docs build output (docs/conf.py; see docs/contributing.rst)
 docs/_build/
 docs/generated/

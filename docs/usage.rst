@@ -109,3 +109,94 @@ each collection's own official optimal-value table:
    git submodule update --init --recursive   # if not already done
    .venv/bin/python -m pytest tests/test_benchmarks.py -v          # everything, ~101 problems (~10 min)
    .venv/bin/python -m pytest tests/test_benchmarks.py -v -m mini  # fastest subset only (~35s)
+
+Measured comparison against real Octave/MEX SeDuMi
+----------------------------------------------------
+
+The table below is a **timing and optimal-value comparison of this port
+against a from-source build of the real Octave/MEX SeDuMi**
+(``vendor/sedumi-upstream``, built via ``install_sedumi -rebuild``),
+solving all 105 problems ``tests/test_benchmarks.py`` covers (both
+solvable and infeasible SDPLIB/DIMACS/TORUS instances), measured
+2026-09-04 on Octave 8.4.0 / a 4-core Linux container. **Absolute
+numbers are environment-dependent** (CPU/core count/thermal state) --
+an earlier pass in this same environment, with the two suites run under
+different background load (Octave/MEX measured right after a heavy
+``mkoctfile`` rebuild, Python measured on an otherwise-idle machine),
+showed Octave/MEX ~22% faster in aggregate purely from that noise. The
+numbers below are from both suites run **back-to-back on an otherwise-
+idle machine** (Python immediately followed by Octave/MEX, no rebuild or
+install in between) to remove that skew; treat the ratio column as
+indicative, not a tight bound. See :doc:`contributing` (DEVLOG's Phase 5
+entry) for an earlier, 5-problem version of this same comparison.
+
+**Timing, by problem size** (bucketed by the real Octave/MEX solve time):
+
+.. list-table::
+   :header-rows: 1
+
+   * - Bucket
+     - Problems
+     - Python total
+     - Octave/MEX total
+     - Ratio (Python / Octave)
+   * - < 2 s
+     - 61
+     - 51.1 s
+     - 44.5 s
+     - 1.15
+   * - 2-20 s
+     - 34
+     - 261.1 s
+     - 278.1 s
+     - 0.94
+   * - 20 s+
+     - 10
+     - 501.4 s
+     - 478.3 s
+     - 1.05
+   * - **All 105**
+     - 105
+     - **813.6 s**
+     - **800.9 s**
+     - **1.02**
+
+Under matched conditions, this port and real Octave/MEX SeDuMi run
+**within a few percent of each other in aggregate** -- close enough that
+the remaining gap is within this environment's own run-to-run noise, not
+a clear, reproducible slowdown in either direction. Individual problems
+still vary more (see the full table below): DIMACS's small ANTENNA-family
+SOCP problems (``nb``, ``nb_L2``, ``nql30old``, ...) consistently show
+this port running 2-3x slower, plausibly Python interpreter/NumPy-
+allocation/ctypes-crossing overhead dominating on problems this small,
+while several others (``qssp30``, ``hinf13``, ``truss6``, ...) run faster
+than real Octave/MEX -- see the ``ratio_py_over_oct`` column.
+
+**Optimal value (pobj) agreement.** Both solvers' final primal objective
+values, formatted in scientific notation to the same number of
+significant digits so they line up for a direct compare:
+
+.. csv-table:: pobj (7 significant digits), all 105 problems
+   :file: _static/benchmark_pobj_comparison.csv
+   :header-rows: 1
+   :widths: 10, 24, 22, 22, 12
+
+``reldiff`` is ``|python_pobj - octave_pobj| / max(|python_pobj|,
+|octave_pobj|)``. Across all 105 problems: 59 agree to a relative
+difference under ``1e-8``, 81 under ``1e-6``, and 99 under ``1e-4``. The
+handful of larger outliers are already-documented cases, not porting
+bugs:
+
+- ``hinf7`` (``reldiff`` ~1.5e-2): SDPLIB's own published reference value
+  for the ``hinf*`` family is only given to 2-3 significant figures, and
+  ``tests/test_benchmarks.py``'s tolerance for this family is widened by
+  hand accordingly (see that file's ``SDPLIB_PARAMS``).
+- ``qssp30old`` (``reldiff`` ~1.4e-2): the real Octave/MEX build itself
+  returns ``numerr=2`` on this instance (a genuine solver limitation, not
+  something this port introduced) -- see :doc:`contributing`'s DEVLOG
+  reference on ``nb_L2``/``nql30old``/``qssp30old`` for the full story.
+
+Raw per-run CSVs (:download:`Python <_static/benchmark_results_python.csv>`,
+:download:`Octave/MEX <_static/benchmark_results_octave.csv>`) and the
+merged :download:`comparison table <_static/benchmark_comparison.csv>`
+are downloadable for anyone who wants to slice the data differently.

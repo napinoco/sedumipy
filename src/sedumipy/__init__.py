@@ -2,6 +2,8 @@
 solver), in pure Python (NumPy/SciPy) plus a small standalone C kernel
 library (libsedumi.so, via ctypes -- see _native.py).
 
+::
+
     import sedumipy
     x, y, info = sedumipy.sedumi(A, b, c, K)
 

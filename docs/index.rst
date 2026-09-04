@@ -41,6 +41,29 @@ real Octave/SeDuMi output; PSD (``K.s``) cones are also implemented and
 verified against real reference solves. See :doc:`status` for the current
 scope and :doc:`contributing` for the full phase-by-phase project history.
 
+A note on citation and attribution
+-----------------------------------
+
+sedumipy is an independent, unofficial re-implementation of SeDuMi,
+created without involvement from the original SeDuMi authors or
+maintainers. Although it aims to reproduce SeDuMi's numerical behavior
+faithfully, it is a from-scratch port and may differ from the original in
+ways not yet identified -- in short, **it may not always behave
+identically to real SeDuMi.**
+
+If you use this software in research, please cite the original SeDuMi
+paper to give credit where it is due:
+
+    Sturm, J.F. (1999). Using SeDuMi 1.02, a MATLAB toolbox for
+    optimization over symmetric cones. *Optimization Methods and
+    Software*, 11(1-4), 625-653.
+
+At the same time, please make clear in your own work that results were
+produced using **sedumipy, an unofficial Python port** -- not the
+original SeDuMi. Any discrepancy, bug, or unexpected numerical behavior
+you observe here is a property of this port, not of SeDuMi itself, and
+should not be attributed to the original project or its authors.
+
 License
 -------
 

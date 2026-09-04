@@ -19,7 +19,38 @@ import sedumipy
 x, y, info = sedumipy.sedumi(np.eye(2), np.array([1.0, 1.0]), np.array([1.0, 1.0]), {"l": 2})
 ```
 
-This mirrors real SeDuMi's own `[x, y, info] = sedumi(A, b, c, K)` call.
+This mirrors real SeDuMi's own `[x, y, info] = sedumi(A, b, c, K)` call:
+it solves the primal `min c'x s.t. Ax=b, x in K` together with its dual
+`max b'y s.t. A'y+s=c, s in K*` (`K*` is the dual cone of `K` — every
+block sedumipy supports is self-dual except `K.f`, whose dual is `{0}`);
+`sedumi()` returns both `x` and `y`. See
+[`docs/usage.rst`](docs/usage.rst) for the full primal-dual writeup,
+citing the original
+[Addendum to the SeDuMi User Guide](https://sedumi.ie.lehigh.edu/sedumi/files/sedumi-downloads/SeDuMi_Guide_11.pdf)
+(Pólik, 2005).
+
+`K.f`, `K.l`, `K.q`, `K.r`, and `K.s` blocks can all be combined in one
+problem — `x` is one vector laid out as `[x_f | x_l | x_q | x_r | x_s]`,
+and `A`/`c` follow that same layout:
+
+```python
+# x = [ x1 (free) | x2, x3 (l>=0) | x4, x5, x6 (SOC) | s1..s4 (2x2 PSD) ]
+A = np.zeros((4, 10))
+A[0, 0] = 1.0; A[1, 1] = A[1, 2] = 1.0; A[2, 3] = 1.0; A[3, 6] = A[3, 9] = 1.0
+b = np.array([1.0, 2.0, 2.0, 2.0])
+c = np.zeros(10)
+c[0], c[1], c[2], c[4], c[7], c[8] = 1.0, 1.0, 2.0, -1.0, -0.5, -0.5
+K = {"f": 1, "l": 2, "q": [3], "s": [2]}
+x, y, info = sedumipy.sedumi(A, b, c, K)
+```
+
+`docs/usage.rst` walks through this example in full (including the
+closed-form answer), and also works through a realistic mixed
+LP+SOCP+SDP example straight from the literature — Example 5 of Ito,
+*A Study on the Algorithm and Implementation of SDPT3*
+([arXiv:2512.24623](https://arxiv.org/abs/2512.24623)) — showing how to
+translate SDPT3's own `[blk, At, C, b]` input format into a single
+`sedumipy.sedumi()` call.
 
 **New contributor?** Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first — it
 has the current phase-by-phase status, the porting workflow this project

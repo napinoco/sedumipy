@@ -30,27 +30,14 @@ citing the original
 (Pólik, 2005).
 
 `K.f`, `K.l`, `K.q`, `K.r`, and `K.s` blocks can all be combined in one
-problem — `x` is one vector laid out as `[x_f | x_l | x_q | x_r | x_s]`,
-and `A`/`c` follow that same layout:
-
-```python
-# x = [ x1 (free) | x2, x3 (l>=0) | x4, x5, x6 (SOC) | s1..s4 (2x2 PSD) ]
-A = np.zeros((4, 10))
-A[0, 0] = 1.0; A[1, 1] = A[1, 2] = 1.0; A[2, 3] = 1.0; A[3, 6] = A[3, 9] = 1.0
-b = np.array([1.0, 2.0, 2.0, 2.0])
-c = np.zeros(10)
-c[0], c[1], c[2], c[4], c[7], c[8] = 1.0, 1.0, 2.0, -1.0, -0.5, -0.5
-K = {"f": 1, "l": 2, "q": [3], "s": [2]}
-x, y, info = sedumipy.sedumi(A, b, c, K)
-```
-
-`docs/usage.rst` walks through this example in full (including the
-closed-form answer), and also works through a realistic mixed
-LP+SOCP+SDP example straight from the literature — Example 5 of Ito,
-*A Study on the Algorithm and Implementation of SDPT3*
-([arXiv:2512.24623](https://arxiv.org/abs/2512.24623)) — showing how to
-translate SDPT3's own `[blk, At, C, b]` input format into a single
-`sedumipy.sedumi()` call.
+problem — `x` is a single vector laid out as `[x_f | x_l | x_q | x_r |
+x_s]`, and `A`/`c` follow that same layout, with each `n`-by-`n` PSD
+block flattened into `n**2` consecutive column-major (`vec`) entries.
+[`docs/usage.rst`](docs/usage.rst) works a mixed LP + SOCP + SDP model
+end to end, showing how to turn each written constraint into its slice
+of `A`, `b`, `c`, and `K` — including how the SDP block's coefficient
+*matrices* get vectorized into columns of `A'`, which is the step that
+trips people up.
 
 **New contributor?** Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first — it
 has the current phase-by-phase status, the porting workflow this project

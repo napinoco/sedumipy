@@ -176,10 +176,10 @@ than real Octave/MEX -- see the ``ratio_py_over_oct`` column.
 values, formatted in scientific notation to the same number of
 significant digits so they line up for a direct compare:
 
-.. csv-table:: pobj (7 significant digits), all 105 problems
-   :file: _static/benchmark_pobj_comparison.csv
+.. csv-table:: pobj (7 significant digits) and timing, all 105 problems
+   :file: _static/benchmark_comparison.csv
    :header-rows: 1
-   :widths: 10, 24, 22, 22, 12
+   :widths: 8, 16, 12, 12, 8, 6, 6, 6, 6, 8, 8, 8
 
 ``reldiff`` is ``|python_pobj - octave_pobj| / max(|python_pobj|,
 |octave_pobj|)``. Across all 105 problems: 59 agree to a relative

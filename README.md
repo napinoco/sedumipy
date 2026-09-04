@@ -21,23 +21,13 @@ x, y, info = sedumipy.sedumi(np.eye(2), np.array([1.0, 1.0]), np.array([1.0, 1.0
 
 This mirrors real SeDuMi's own `[x, y, info] = sedumi(A, b, c, K)` call:
 it solves the primal `min c'x s.t. Ax=b, x in K` together with its dual
-`max b'y s.t. A'y+s=c, s in K*` (`K*` is the dual cone of `K` — every
-block sedumipy supports is self-dual except `K.f`, whose dual is `{0}`);
-`sedumi()` returns both `x` and `y`. See
-[`docs/usage.rst`](docs/usage.rst) for the full primal-dual writeup,
-citing the original
-[Addendum to the SeDuMi User Guide](https://sedumi.ie.lehigh.edu/sedumi/files/sedumi-downloads/SeDuMi_Guide_11.pdf)
-(Pólik, 2005).
+`max b'y s.t. A'y+s=c, s in K*`, returning both `x` and `y`. `K` carves
+`x` into cone blocks — free, nonnegative, Lorentz, rotated Lorentz, and
+PSD — which can be mixed freely in one problem.
 
-`K.f`, `K.l`, `K.q`, `K.r`, and `K.s` blocks can all be combined in one
-problem — `x` is a single vector laid out as `[x_f | x_l | x_q | x_r |
-x_s]`, and `A`/`c` follow that same layout, with each `n`-by-`n` PSD
-block flattened into `n**2` consecutive column-major (`vec`) entries.
-[`docs/usage.rst`](docs/usage.rst) works a mixed LP + SOCP + SDP model
-end to end, showing how to turn each written constraint into its slice
-of `A`, `b`, `c`, and `K` — including how the SDP block's coefficient
-*matrices* get vectorized into columns of `A'`, which is the step that
-trips people up.
+The [usage guide](https://napinoco.github.io/sedumipy/usage.html) defines
+each cone and works a mixed LP + SOCP + SDP model end to end, from the
+written constraints down to `A`, `b`, `c`, and `K`.
 
 **New contributor?** Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first — it
 has the current phase-by-phase status, the porting workflow this project

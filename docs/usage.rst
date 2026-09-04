@@ -21,12 +21,11 @@ together with its dual
    \text{(D)} \qquad \max_{y,s}\ b^T y \quad \text{such that } A^T y + s = c,\ s \in K^*
 
 One call solves both: ``sedumi()`` returns the primal optimum ``x`` and
-the dual optimum ``y``. The dual slack ``s = c - A^T y`` is not returned,
-but is one line to recompute. Every cone ``sedumipy`` supports is
-self-dual (:math:`K^* = K`) except the free block ``K.f``, whose dual is
-:math:`\{0\}` -- so its dual-slack entries are pinned to zero. This
-primal-dual pair, and the meaning of each ``K`` field below, follow real
-SeDuMi's own convention; see the `Addendum to the SeDuMi User Guide
+the dual optimum ``y`` (the dual slack ``s = c - A^T y`` is not returned,
+but is one line to recompute). :math:`K` is the cone the primal variable
+lives in and :math:`K^*` its dual cone, both defined block by block just
+below. This primal-dual pair, and the meaning of each ``K`` field, follow
+real SeDuMi's own convention; see the `Addendum to the SeDuMi User Guide
 <https://sedumi.ie.lehigh.edu/sedumi/files/sedumi-downloads/SeDuMi_Guide_11.pdf>`_
 (Pólik, 2005), Section 2.
 
@@ -49,10 +48,40 @@ up into cones, in the same field-name convention as real SeDuMi:
 ``K["s"]``   sizes of positive semidefinite (PSD) cone blocks
 ============ ===================================================
 
+Spelled out, a block of size :math:`n` is constrained to one of:
+
+.. math::
+
+   \begin{aligned}
+   \texttt{K.f} \;&:\; \mathbb{R}^{n}
+     && \text{unrestricted} \\[2pt]
+   \texttt{K.l} \;&:\; \mathbb{R}^{n}_{+} = \bigl\{\, x : x_i \ge 0 \,\bigr\}
+     && \text{nonnegative orthant} \\[2pt]
+   \texttt{K.q} \;&:\; \mathcal{Q}^{n} =
+       \bigl\{\, x : x_1 \ge \lVert (x_2, \ldots, x_n) \rVert \,\bigr\}
+     && \text{Lorentz (second-order) cone} \\[2pt]
+   \texttt{K.r} \;&:\; \mathcal{R}^{n} =
+       \bigl\{\, x : 2 x_1 x_2 \ge \lVert (x_3, \ldots, x_n) \rVert^2,\;
+                     x_1, x_2 \ge 0 \,\bigr\}
+     && \text{rotated Lorentz cone} \\[2pt]
+   \texttt{K.s} \;&:\; \mathcal{S}^{n}_{+} =
+       \bigl\{\, X \in \mathbb{R}^{n \times n} : X = X^T,\; X \succeq 0 \,\bigr\}
+     && \text{PSD cone}
+   \end{aligned}
+
+and :math:`K` is the product of all its blocks. Two conventions are worth
+pinning down, because they differ between solvers: a Lorentz block puts
+its **norm bound in the first entry**, and a rotated block carries a
+**factor of 2** on the :math:`x_1 x_2` product. All of these are
+self-dual (:math:`K^* = K`) except ``K.f``, whose dual is :math:`\{0\}`
+-- so a free block's dual-slack entries are pinned to zero.
+
 Only the fields you need have to be present; omitted fields default to
 none of that cone type. Blocks appear in ``x`` in ``f, l, q, r, s``
-order, each block occupying that many consecutive entries (``s`` blocks
-occupy ``size**2`` entries, stored column-major/vec).
+order, each block occupying that many consecutive entries -- except an
+``s`` block of size :math:`n`, which occupies :math:`n^2` entries, since
+its matrix is stored flattened column-major (see step 2 of the worked
+example below).
 
 .. code-block:: python
 

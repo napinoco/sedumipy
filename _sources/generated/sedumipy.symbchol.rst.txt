@@ -1,0 +1,12 @@
+﻿sedumipy.symbchol
+=================
+
+.. automodule:: sedumipy.symbchol
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      symbchol
+   

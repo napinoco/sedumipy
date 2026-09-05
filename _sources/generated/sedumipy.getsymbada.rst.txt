@@ -1,0 +1,12 @@
+﻿sedumipy.getsymbada
+===================
+
+.. automodule:: sedumipy.getsymbada
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      getsymbada
+   

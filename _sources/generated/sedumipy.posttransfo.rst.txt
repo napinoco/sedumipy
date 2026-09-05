@@ -1,0 +1,12 @@
+﻿sedumipy.posttransfo
+====================
+
+.. automodule:: sedumipy.posttransfo
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      posttransfo
+   

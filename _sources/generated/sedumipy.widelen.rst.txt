@@ -1,0 +1,12 @@
+﻿sedumipy.widelen
+================
+
+.. automodule:: sedumipy.widelen
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      widelen
+   

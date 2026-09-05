@@ -1,0 +1,12 @@
+﻿sedumipy.trydif
+===============
+
+.. automodule:: sedumipy.trydif
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      trydif
+   

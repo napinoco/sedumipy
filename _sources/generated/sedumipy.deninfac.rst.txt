@@ -1,0 +1,12 @@
+﻿sedumipy.deninfac
+=================
+
+.. automodule:: sedumipy.deninfac
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      deninfac
+   

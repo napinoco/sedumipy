@@ -1,0 +1,12 @@
+﻿sedumipy.incorder
+=================
+
+.. automodule:: sedumipy.incorder
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      incorder
+   

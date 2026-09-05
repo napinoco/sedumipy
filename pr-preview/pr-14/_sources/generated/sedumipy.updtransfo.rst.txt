@@ -1,0 +1,12 @@
+﻿sedumipy.updtransfo
+===================
+
+.. automodule:: sedumipy.updtransfo
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      updtransfo
+   

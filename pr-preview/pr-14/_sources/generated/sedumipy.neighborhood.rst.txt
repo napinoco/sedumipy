@@ -1,0 +1,12 @@
+﻿sedumipy.neighborhood
+=====================
+
+.. automodule:: sedumipy.neighborhood
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      iswnbr
+   

@@ -1,0 +1,12 @@
+﻿sedumipy.maxstep
+================
+
+.. automodule:: sedumipy.maxstep
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      maxstep
+   

@@ -1,0 +1,12 @@
+﻿sedumipy.sddir
+==============
+
+.. automodule:: sedumipy.sddir
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      sddir
+   

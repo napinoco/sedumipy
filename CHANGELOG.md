@@ -8,6 +8,8 @@ status and history behind these entries, and
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-09-05
+
 ### Fixed
 
 - `sedumi()` raised `IndexError: index 0 is out of bounds for axis 0
@@ -22,6 +24,19 @@ status and history behind these entries, and
   guards on the data (`np.any(sreal)`), matching the `np.any(sdiag)`
   branch beside it. A mix of diagonal and matrix-valued blocks was
   never affected.
+
+### Changed
+
+- CI (`.github/workflows/ci.yml`) now runs the full test suite on
+  Windows against both BLAS choices `tools/build_libsedumi.sh` can make
+  there, not just the MSYS2 one: scipy-openblas64, which is what the
+  published wheels actually link and is ILP64 (a different `blasint` --
+  see `csrc/sedumi_platform.h`), and MSYS2's OpenBLAS, the documented
+  fallback. Until now the only Windows exercise of the ILP64 build was
+  `wheels.yml`'s one-line `test-command`, which solves a 2x2 LP and
+  never reaches the sparse Cholesky, dense-column or PSD cone paths
+  where an integer-width mistake would show. Linux already covered
+  ILP64 this way.
 
 ## [0.0.1] - 2026-09-05
 

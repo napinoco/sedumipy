@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sedumipy"
-version = "0.0.1"
+version = "0.0.2"
 description = "MATLAB/Octave-free port of SeDuMi (work in progress)"
 readme = "README.md"
 # No email deliberately: bug reports and questions belong in the

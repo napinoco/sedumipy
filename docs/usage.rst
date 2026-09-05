@@ -394,6 +394,59 @@ Two file formats are supported for problem/solution I/O, both under
 
 See :doc:`api` for the full signatures.
 
+Using sedumipy from cvxpy
+---------------------------
+
+`cvxpy <https://www.cvxpy.org/>`_ can drive sedumipy directly, so a
+problem can be written in cvxpy's modeling language instead of as
+``(A, b, c, K)`` by hand. Install cvxpy alongside sedumipy
+(``pip install sedumipy[cvxpy]``) and pass an instance of the solver
+class to ``solve()``:
+
+.. code-block:: python
+
+   import cvxpy as cp
+   import numpy as np
+   from sedumipy.cvxpy_interface import SEDUMIPY
+
+   A = np.array([[3.0, 1.0, 2.0], [1.0, 2.0, 4.0]])
+   b = np.array([9.0, 8.0])
+   c = np.array([7.0, 4.0, 10.0])
+
+   x = cp.Variable(3)
+   problem = cp.Problem(cp.Minimize(c @ x), [A @ x == b, x >= 0])
+   problem.solve(solver=SEDUMIPY())        # 26.0
+
+   x.value                                 # array([2., 3., 0.])
+   problem.status                          # 'optimal'
+   problem.solver_stats.num_iters          # iterations sedumi() took
+   problem.solver_stats.extra_stats        # sedumi()'s own `info` dict
+
+This needs no patched or forked cvxpy: a stock install accepts a solver
+*instance* it has never heard of (cvxpy's "custom solver" path), which
+is what ``SEDUMIPY()`` is. Note that this is why the solver is passed as
+an object rather than by name -- ``solver="SEDUMIPY"`` and
+``cp.SEDUMIPY`` do not exist, since cvxpy resolves names only against
+its own built-in solvers.
+
+Dual values come back on the constraints as usual
+(``constraint.dual_value``), and keyword arguments to ``solve()`` are
+passed through as sedumi()'s ``pars``:
+
+.. code-block:: python
+
+   problem.solve(solver=SEDUMIPY(), eps=1e-10, maxiter=250)
+
+``verbose=True`` has no effect (this port does not implement SeDuMi's
+console progress printout), and neither does warm starting.
+
+**Scope.** The interface covers the cones sedumipy itself supports:
+equalities, inequalities, second-order cone and PSD constraints -- so
+LP, SOCP, SDP and any mix of them. Exponential- and power-cone problems
+(``cp.exp``, ``cp.log``, ``cp.entr``, fractional ``cp.power``, ...) and
+mixed-integer problems are out of scope; cvxpy raises its own
+``SolverError`` for those rather than returning a wrong answer.
+
 Benchmarks
 ----------
 

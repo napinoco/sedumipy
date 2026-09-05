@@ -22,6 +22,12 @@ File I/O
 .. automodule:: sedumipy.sdpa
    :members: read_sdpa, write_sdpa
 
+cvxpy interface
+---------------
+
+.. automodule:: sedumipy.cvxpy_interface
+   :members: SEDUMIPY, dims_to_solver_dict
+
 Solver options
 --------------
 

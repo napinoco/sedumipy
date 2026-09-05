@@ -75,6 +75,28 @@ hand-verified on a real Windows machine) — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full phase-by-phase status
 and known limitations.
 
+## Use it from cvxpy
+
+Problems can also be written in [cvxpy](https://www.cvxpy.org/)'s
+modeling language rather than as `(A, b, c, K)` by hand — install cvxpy
+alongside sedumipy (`pip install sedumipy[cvxpy]`) and hand `solve()` an
+instance of the solver class:
+
+```python
+import cvxpy as cp
+from sedumipy.cvxpy_interface import SEDUMIPY
+
+x = cp.Variable(3)
+problem = cp.Problem(cp.Minimize(c @ x), [A @ x == b, x >= 0])
+problem.solve(solver=SEDUMIPY())   # 26.0, with the same A, b, c as above
+```
+
+A stock cvxpy install is enough (this uses cvxpy's own custom-solver
+hook — nothing has to be merged into cvxpy for it to work), and it
+covers the same LP/SOCP/SDP scope the solver itself does. See the
+[usage guide](https://napinoco.github.io/sedumipy/usage.html#using-sedumipy-from-cvxpy)
+for solver options, dual values, and what is out of scope.
+
 ## Installation
 
 ```sh

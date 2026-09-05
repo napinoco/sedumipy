@@ -1,0 +1,12 @@
+﻿sedumipy.symbcholden
+====================
+
+.. automodule:: sedumipy.symbcholden
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      symbcholden
+   

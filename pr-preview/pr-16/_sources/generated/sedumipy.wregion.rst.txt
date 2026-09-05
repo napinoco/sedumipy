@@ -1,0 +1,12 @@
+﻿sedumipy.wregion
+================
+
+.. automodule:: sedumipy.wregion
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      wregion
+   

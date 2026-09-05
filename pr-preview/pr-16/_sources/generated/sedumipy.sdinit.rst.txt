@@ -1,0 +1,12 @@
+﻿sedumipy.sdinit
+===============
+
+.. automodule:: sedumipy.sdinit
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      sdinit
+   

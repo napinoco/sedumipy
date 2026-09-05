@@ -19,7 +19,7 @@ convention is to MAXIMIZE trace(C,X); SeDuMi minimizes, so C's sign is
 flipped on the way in (and back on the way out, in write_sdpa).
 
 write_sdpa (the inverse direction) is new functionality, not a port --
-real SeDuMi's own conversion/writesdp.m instead writes the unrelated
+original SeDuMi's own conversion/writesdp.m instead writes the unrelated
 SDPpack format, not SDPA sparse. It's the direct inverse of the reading
 convention above, verified by round-tripping through read_sdpa itself
 (tests/test_sdpa.py) as well as against a real Octave fromsdpa.m oracle.

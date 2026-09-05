@@ -47,7 +47,7 @@ def build_q_pattern(A, Ablkjc, K: dict, dense: dict | None = None):
 
 def build_aord(A, K: dict, dense: dict | None = None):
     """Ablkjc, Aord, symbada = build_aord(A, K, dense=None): the one-time
-    setup real sedumi.m does before its main loop starts (before
+    setup original sedumi.m does before its main loop starts (before
     `symbchol`). `dense["q"]` (1-indexed, local Lorentz-block numbering --
     see getdense.py's module docstring) has its rows zeroed out of the
     pre-loop `DAt.q` sparsity pattern before it feeds `Aord["qperm"]`/

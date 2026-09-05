@@ -94,7 +94,7 @@ dropped:
     Step-Differentiation" auto-switch entirely) makes this port solve
     nb_L2 cleanly too (numerr=0, iter=17), and the *default* run's own
     per-iteration CG counts (`err["kcg"]`/`Lsd["kcg"]`, the same
-    quantities real sedumi.m's console "cg cg" columns report) run well
+    quantities original sedumi.m's console "cg cg" columns report) run well
     above the real build's throughout -- so the auto-switch fires
     several iterations earlier here than it does in the real build,
     changing the solved trajectory before it can recover -- but nothing

@@ -113,7 +113,7 @@ of 2026-08-31:
 | Phase 3-d | Port `sedumi.m` itself + full verification against golden reference | **Done (LP+SOCP+PSD scope)** |
 | Phase 4 | High-level API and I/O compatibility layer (.mat/SDPA) | **Done** |
 | Phase 5 | Verification and benchmarking | **Done** |
-| Phase 6 | Packaging and release | **Partially done** (Linux/macOS/Windows all have cibuildwheel builds configured in CI (`.github/workflows/wheels.yml`); PyPI publication and manylinux BLAS bundling (`auditwheel repair`) still pending) |
+| Phase 6 | Packaging and release | **Done** (Linux/macOS/Windows cibuildwheel builds in `.github/workflows/wheels.yml`, BLAS bundled into the wheels by `auditwheel`/`delvewheel`, source distribution completed by `MANIFEST.in` and install-tested in CI, published to PyPI on release via Trusted Publishing -- see [`RELEASING.md`](RELEASING.md)) |
 
 Phase 3 (porting the interior-point algorithm itself) is **complete for
 LP + SOCP (second-order cone) + PSD (positive semidefinite cone)

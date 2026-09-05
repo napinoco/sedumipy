@@ -4,6 +4,10 @@ Installation
 Prebuilt wheels
 ---------------
 
+.. code-block:: sh
+
+   pip install sedumipy
+
 Where a wheel matches your platform, nothing below is needed: the
 compiled kernel library and the BLAS it needs are already inside it, so
 no compiler and no BLAS install are required.

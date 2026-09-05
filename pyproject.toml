@@ -4,9 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sedumipy"
-version = "0.0.1.dev0"
+version = "0.0.1"
 description = "MATLAB/Octave-free port of SeDuMi (work in progress)"
 readme = "README.md"
+# No email deliberately: bug reports and questions belong in the
+# issue tracker linked under [project.urls] below, which is public,
+# searchable, and does not put a personal address on a PyPI page.
+authors = [{ name = "napinoco" }]
+keywords = [
+    "conic programming",
+    "semidefinite programming",
+    "second-order cone programming",
+    "linear programming",
+    "interior-point method",
+    "optimization",
+    "sedumi",
+]
 license = { text = "GPL-2.0-only" }
 requires-python = ">=3.10"
 dependencies = [

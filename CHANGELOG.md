@@ -8,6 +8,21 @@ status and history behind these entries, and
 
 ## [Unreleased]
 
+### Fixed
+
+- `sedumi()` raised `IndexError: index 0 is out of bounds for axis 0
+  with size 0` from `pretransfo()` on any problem whose PSD blocks were
+  *all* diagonal -- either size 1 (`K.s=[1]`, which is just a
+  nonnegative scalar and crashed whatever the data) or with `A` and `c`
+  touching only the block's diagonal entries. `pretransfo()` rewrites
+  such blocks into `K.l`, and the branch building the remaining
+  matrix-valued blocks read its data through `sreal` while being
+  guarded by `K_rsdpN` -- which counts the diagonal blocks too on the
+  no-complex path, so the guard passed with no data behind it. It now
+  guards on the data (`np.any(sreal)`), matching the `np.any(sdiag)`
+  branch beside it. A mix of diagonal and matrix-valued blocks was
+  never affected.
+
 ## [0.0.1] - 2026-09-05
 
 First release published to [PyPI](https://pypi.org/project/sedumipy/):

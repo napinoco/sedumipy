@@ -11,6 +11,23 @@ semidefinite (SDP) programs — as a standalone C kernel library plus a
 Python (NumPy/SciPy) package. No MATLAB or GNU Octave runtime is needed
 to install or run it.
 
+It solves conic programs over a symmetric cone `K` — one call gives you
+both sides of the primal-dual pair:
+
+```math
+\begin{aligned}
+\text{(P)} \quad \min_{x} \;\; & c^\top x
+  & \qquad \text{(D)} \quad \max_{y,\,s} \;\; & b^\top y \\
+\text{s.t.} \;\; & Ax = b, \;\; x \in K
+  & \qquad \text{s.t.} \;\; & A^\top y + s = c, \;\; s \in K^{*}
+\end{aligned}
+```
+
+`K` is a product of blocks of five kinds — free, nonnegative orthant,
+second-order (Lorentz), rotated Lorentz, and positive semidefinite — so
+LP, SOCP, and SDP are the cases where every block is of one kind, and a
+single problem may mix them freely. An LP, for instance:
+
 ```python
 import numpy as np
 import sedumipy
@@ -29,11 +46,9 @@ x, y, info = sedumipy.sedumi(A, b, c, K)
 # x = [2., 3., 0.]   the optimum, costing c @ x = 26
 ```
 
-This mirrors real SeDuMi's own `[x, y, info] = sedumi(A, b, c, K)` call:
-it solves the primal `min c'x s.t. Ax=b, x in K` together with its dual
-`max b'y s.t. A'y+s=c, s in K*`, returning both `x` and `y`. `K` carves
-`x` into cone blocks — free, nonnegative, Lorentz, rotated Lorentz, and
-PSD — which can be mixed freely in one problem.
+Here `x` is the primal optimum and `y` the dual one; `K = {"l": 3}` says
+all three variables are nonnegative. This mirrors original SeDuMi's own
+`[x, y, info] = sedumi(A, b, c, K)` call.
 
 The [usage guide](https://napinoco.github.io/sedumipy/usage.html) defines
 each cone and works a mixed LP + SOCP + SDP model end to end, from the
@@ -47,8 +62,8 @@ work.
 ## Status
 
 LP, second-order-cone (SOCP), and semidefinite (SDP, `K.s`) problems are
-all fully ported and verified against real Octave/SeDuMi output, to tight
-numerical tolerances, including on published
+all fully ported and verified against original Octave/SeDuMi output, to
+tight numerical tolerances, including on published
 [SDPLIB](https://github.com/vsdp/SDPLIB)
 and [DIMACS](https://github.com/vsdp/DIMACS) benchmark problems (see
 [Benchmarks](#benchmarks) below). Dense-column preconditioning is also
@@ -156,8 +171,8 @@ sedumipy is an independent, unofficial re-implementation of SeDuMi, created
 without involvement from the original SeDuMi authors or maintainers.
 Although it aims to reproduce SeDuMi's numerical behavior faithfully, it is
 a from-scratch port and may differ from the original in ways not yet
-identified — in short, **it may not always behave identically to real
-SeDuMi.**
+identified — in short, **it may not always behave identically to the
+original SeDuMi.**
 
 If you use this software in research, please cite the original SeDuMi
 paper to give credit where it is due:

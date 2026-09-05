@@ -7,6 +7,24 @@ sedumipy
 standalone C library plus a Python (NumPy/SciPy) package. No MATLAB or
 GNU Octave runtime is required.
 
+It solves conic programs over a symmetric cone :math:`K`, returning both
+sides of the primal-dual pair from one call:
+
+.. math::
+
+   \begin{aligned}
+   \text{(P)} \quad \min_{x} \;\; & c^T x
+     & \qquad \text{(D)} \quad \max_{y,\,s} \;\; & b^T y \\
+   \text{s.t.} \;\; & Ax = b, \;\; x \in K
+     & \qquad \text{s.t.} \;\; & A^T y + s = c, \;\; s \in K^{*}
+   \end{aligned}
+
+:math:`K` is a product of blocks of five kinds -- free, nonnegative
+orthant, second-order (Lorentz), rotated Lorentz, and positive
+semidefinite -- so LP, SOCP, and SDP are the cases where every block is
+of one kind, and a single problem may mix them freely. See :doc:`usage`
+for each cone's definition and for a worked mixed-cone example.
+
 To solve, say,
 
 .. math::
@@ -36,10 +54,10 @@ nonnegative with ``K``:
    x, y, info = sedumipy.sedumi(A, b, c, K)
    # x = [2., 3., 0.]   the optimum, costing c @ x = 26
 
-This mirrors real SeDuMi's own ``[x, y, info] = sedumi(A, b, c, K)`` call
-signature and semantics -- see :doc:`usage` for the problem format (the
-``K`` cone-structure dict, and how to mix LP, second-order-cone, and PSD
-blocks in one problem) and :doc:`api` for the full public API.
+This mirrors original SeDuMi's own ``[x, y, info] = sedumi(A, b, c, K)``
+call signature and semantics -- see :doc:`usage` for the problem format
+(the ``K`` cone-structure dict, and how to mix LP, second-order-cone, and
+PSD blocks in one problem) and :doc:`api` for the full public API.
 
 .. toctree::
    :maxdepth: 2
@@ -56,7 +74,7 @@ Project status
 --------------
 
 LP and SOCP problems are fully ported and verified against
-real Octave/SeDuMi output; PSD (``K.s``) cones are also implemented and
+original Octave/SeDuMi output; PSD (``K.s``) cones are also implemented and
 verified against real reference solves. See :doc:`status` for the current
 scope and :doc:`contributing` for the full phase-by-phase project history.
 
@@ -68,7 +86,7 @@ created without involvement from the original SeDuMi authors or
 maintainers. Although it aims to reproduce SeDuMi's numerical behavior
 faithfully, it is a from-scratch port and may differ from the original in
 ways not yet identified -- in short, **it may not always behave
-identically to real SeDuMi.**
+identically to the original SeDuMi.**
 
 If you use this software in research, please cite the original SeDuMi
 paper to give credit where it is due:

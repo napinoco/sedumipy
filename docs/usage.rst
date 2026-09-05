@@ -1,8 +1,8 @@
 Usage
 =====
 
-The public entry point is :func:`sedumipy.sedumi`, matching real SeDuMi's
-own signature:
+The public entry point is :func:`sedumipy.sedumi`, matching original
+SeDuMi's own signature:
 
 .. code-block:: python
 
@@ -25,19 +25,19 @@ the dual optimum ``y`` (the dual slack ``s = c - A^T y`` is not returned,
 but is one line to recompute). :math:`K` is the cone the primal variable
 lives in and :math:`K^*` its dual cone, both defined block by block just
 below. This primal-dual pair, and the meaning of each ``K`` field, follow
-real SeDuMi's own convention; see the `Addendum to the SeDuMi User Guide
+original SeDuMi's own convention; see the `Addendum to the SeDuMi User Guide
 <https://sedumi.ie.lehigh.edu/sedumi/files/sedumi-downloads/SeDuMi_Guide_11.pdf>`_
 (Pólik, 2005), Section 2.
 
 ``A`` may be given either as :math:`m \times n` or its transpose
-:math:`n \times m` (SeDuMi disambiguates by shape, matching real SeDuMi);
-dense NumPy arrays and SciPy sparse matrices are both accepted.
+:math:`n \times m` (SeDuMi disambiguates by shape, matching original
+SeDuMi); dense NumPy arrays and SciPy sparse matrices are both accepted.
 
 The cone structure ``K``
 -------------------------
 
 ``K`` is a plain ``dict`` describing how the columns of ``x`` are carved
-up into cones, in the same field-name convention as real SeDuMi:
+up into cones, in the same field-name convention as original SeDuMi:
 
 ============ ===================================================
 ``K["f"]``   number of free (unrestricted) variables
@@ -408,11 +408,11 @@ each collection's own official optimal-value table:
    .venv/bin/python -m pytest tests/test_benchmarks.py -v          # everything, ~101 problems (~10 min)
    .venv/bin/python -m pytest tests/test_benchmarks.py -v -m mini  # fastest subset only (~35s)
 
-Measured comparison against real Octave/MEX SeDuMi
-----------------------------------------------------
+Measured comparison against original Octave/MEX SeDuMi
+--------------------------------------------------------
 
 The table below is a **timing and optimal-value comparison of this port
-against a from-source build of the real Octave/MEX SeDuMi**
+against a from-source build of the original Octave/MEX SeDuMi**
 (``vendor/sedumi-upstream``, built via ``install_sedumi -rebuild``),
 solving all 105 problems ``tests/test_benchmarks.py`` covers (both
 solvable and infeasible SDPLIB/DIMACS/TORUS instances), measured
@@ -428,7 +428,8 @@ install in between) to remove that skew; treat the ratio column as
 indicative, not a tight bound. See :doc:`contributing` (DEVLOG's Phase 5
 entry) for an earlier, 5-problem version of this same comparison.
 
-**Timing, by problem size** (bucketed by the real Octave/MEX solve time):
+**Timing, by problem size** (bucketed by the original Octave/MEX solve
+time):
 
 .. list-table::
    :header-rows: 1
@@ -459,7 +460,7 @@ entry) for an earlier, 5-problem version of this same comparison.
      - **800.9 s**
      - **1.02**
 
-Under matched conditions, this port and real Octave/MEX SeDuMi run
+Under matched conditions, this port and original Octave/MEX SeDuMi run
 **within a few percent of each other in aggregate** -- close enough that
 the remaining gap is within this environment's own run-to-run noise, not
 a clear, reproducible slowdown in either direction. Individual problems
@@ -468,7 +469,7 @@ SOCP problems (``nb``, ``nb_L2``, ``nql30old``, ...) consistently show
 this port running 2-3x slower, plausibly Python interpreter/NumPy-
 allocation/ctypes-crossing overhead dominating on problems this small,
 while several others (``qssp30``, ``hinf13``, ``truss6``, ...) run faster
-than real Octave/MEX -- see the ``ratio_py_over_oct`` column.
+than the original Octave/MEX -- see the ``ratio_py_over_oct`` column.
 
 **Optimal value (pobj) agreement.** Both solvers' final primal objective
 values, formatted in scientific notation to the same number of
@@ -489,7 +490,7 @@ bugs:
   for the ``hinf*`` family is only given to 2-3 significant figures, and
   ``tests/test_benchmarks.py``'s tolerance for this family is widened by
   hand accordingly (see that file's ``SDPLIB_PARAMS``).
-- ``qssp30old`` (``reldiff`` ~1.4e-2): the real Octave/MEX build itself
+- ``qssp30old`` (``reldiff`` ~1.4e-2): the original Octave/MEX build itself
   returns ``numerr=2`` on this instance (a genuine solver limitation, not
   something this port introduced) -- see :doc:`contributing`'s DEVLOG
   reference on ``nb_L2``/``nql30old``/``qssp30old`` for the full story.

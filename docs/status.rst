@@ -35,7 +35,7 @@ MATLAB/Octave-free C library + Python package. As of this writing:
 
 **Scope.** LP, second-order cone (SOCP, ``K.q``/``K.r``), and
 semidefinite (SDP, ``K.s``) problems are fully ported and verified
-against real Octave/SeDuMi output on both synthetic fixtures
+against original Octave/SeDuMi output on both synthetic fixtures
 and published SDPLIB/DIMACS benchmark problems (:doc:`usage`'s
 Benchmarks section). Dense-column preconditioning is implemented.
 

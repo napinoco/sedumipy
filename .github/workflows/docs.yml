@@ -10,17 +10,24 @@ on:
       - ".github/workflows/docs.yml"
   workflow_dispatch: {}
 
+# contents: write, not pages/id-token: this pushes the built site
+# straight to the gh-pages branch (JamesIves/github-pages-deploy-action)
+# instead of going through the Pages deployment API, so it can coexist
+# on that same branch with docs-preview.yml's per-PR subdirectories.
+# Requires two one-time manual settings this file can't set itself:
+# Settings > Pages > Build and deployment > Source = "Deploy from a
+# branch" (gh-pages, / (root)) -- not "GitHub Actions" -- and
+# Settings > Actions > General > Workflow permissions = "Read and write
+# permissions", so GITHUB_TOKEN can push to that branch.
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,16 +48,12 @@ jobs:
       # underscore-prefixed paths (_static/, _sources/) that Sphinx's
       # output depends on.
       - run: touch docs/_build/html/.nojekyll
-      - uses: actions/upload-pages-artifact@v3
+      - uses: JamesIves/github-pages-deploy-action@v4
         with:
-          path: docs/_build/html
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          folder: docs/_build/html
+          branch: gh-pages
+          # docs-preview.yml (PR previews) commits its own pages under
+          # pr-preview/ on this same branch -- excluded here so a
+          # main-branch deploy never wipes an in-flight PR preview.
+          clean-exclude: pr-preview
+          force: false

@@ -18,6 +18,7 @@ on:
       - "tools/build_libsedumi.sh"
       - "setup.py"
       - "pyproject.toml"
+      - "MANIFEST.in"
       - ".github/workflows/wheels.yml"
   pull_request:
     paths:
@@ -26,8 +27,19 @@ on:
       - "tools/build_libsedumi.sh"
       - "setup.py"
       - "pyproject.toml"
+      - "MANIFEST.in"
       - ".github/workflows/wheels.yml"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: >-
+          Upload the built wheels+sdist to TestPyPI as well as to this
+          run's artifacts. A dry run of the real release: TestPyPI is a
+          throwaway index, so a mistake there costs nothing, whereas
+          PyPI refuses to ever accept the same version number twice.
+        type: choice
+        options: [none, testpypi]
+        default: none
   release:
     types: [published]
 
@@ -138,6 +150,24 @@ jobs:
           python-version: "3.12"
       - run: pip install build
       - run: python -m build --sdist
+      # An sdist missing csrc/ or tools/build_libsedumi.sh still *builds*
+      # perfectly happily -- it only fails later, on the end user's
+      # machine, when setup.py's build_ext step goes looking for a build
+      # script that isn't in the tarball. That is exactly what shipped
+      # before MANIFEST.in existed, and `python -m build --sdist`
+      # exiting 0 is no evidence against it. So install the tarball for
+      # real, from outside the checkout (nothing on sys.path but what
+      # pip installed), and solve a problem with it.
+      - name: Install the sdist for real and solve a problem with it
+        run: |
+          pip install setuptools scipy-openblas64==0.3.34.106.0
+          pip install --no-build-isolation dist/*.tar.gz
+          cd "$RUNNER_TEMP"
+          python -c "import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0; print('sdist install OK:', sedumipy.__version__)"
+      - name: Check the metadata PyPI will render
+        run: |
+          pip install twine
+          twine check dist/*.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: sdist
@@ -157,3 +187,57 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+
+  # Both publish jobs use PyPI's Trusted Publishing (OIDC): no API token
+  # is stored in this repository at all, the short-lived credential is
+  # minted per run from `id-token: write` plus the environment name
+  # below. Each index needs a matching publisher configured once on its
+  # side (owner napinoco, repo sedumipy, workflow wheels.yml,
+  # environment testpypi/pypi) -- see RELEASING.md.
+  #
+  # `environment:` is not decoration here: the publisher configuration
+  # is pinned to it, so a workflow run that skipped the environment
+  # cannot mint a credential even if it could reach this job.
+
+  publish-testpypi:
+    # Manual only, and only when the run was started with publish=testpypi
+    # -- an ordinary push must never spend a version number.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == 'testpypi'
+    needs: [build, build-windows, sdist]
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/sedumipy
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # TestPyPI is a scratch index that other people push to as
+          # well; a version already sitting there is not a reason to
+          # fail a rehearsal run.
+          skip-existing: true
+
+  publish-pypi:
+    # Publishing the real thing is deliberately tied to publishing a
+    # GitHub release, so the tag, the release notes and the files on
+    # PyPI are one action rather than three that can drift apart.
+    if: github.event_name == 'release'
+    needs: [build, build-windows, sdist]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/sedumipy
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1

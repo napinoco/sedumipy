@@ -67,13 +67,26 @@ tight numerical tolerances, including on published
 [SDPLIB](https://github.com/vsdp/SDPLIB)
 and [DIMACS](https://github.com/vsdp/DIMACS) benchmark problems (see
 [Benchmarks](#benchmarks) below). Dense-column preconditioning is also
-implemented. `pip`-installable wheels build for Linux (manylinux), macOS,
-and Windows via [`wheels.yml`](.github/workflows/wheels.yml)'s
-cibuildwheel job (not yet published to PyPI; the Windows build uses an
-MSYS2/MinGW toolchain and has only been exercised on GitHub Actions'
-hosted runner, not hand-verified on a real Windows machine) — see
+implemented. Wheels are published to PyPI for Linux (manylinux), macOS
+and Windows by [`wheels.yml`](.github/workflows/wheels.yml)'s
+cibuildwheel job (the Windows build uses an MSYS2/MinGW toolchain and
+has only been exercised on GitHub Actions' hosted runner, not
+hand-verified on a real Windows machine) — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full phase-by-phase status
 and known limitations.
+
+## Installation
+
+```sh
+pip install sedumipy
+```
+
+Wheels cover CPython 3.10-3.13 on Linux x86_64 (manylinux), Windows x64
+and macOS (Apple silicon), with the compiled kernel library and its BLAS
+already inside them — no compiler, no BLAS install, no MATLAB or Octave.
+Anything else falls back to the source distribution and compiles
+locally, which does need a toolchain: see
+[`docs/installation.rst`](docs/installation.rst).
 
 ## Documentation
 
@@ -107,7 +120,10 @@ sedumipy/
   docs/                     # Sphinx documentation source
 ```
 
-## Getting started
+## Getting started from a checkout
+
+To work on sedumipy itself (rather than just use it — see
+[Installation](#installation) above):
 
 ```sh
 git clone --recurse-submodules <this-repo-url>

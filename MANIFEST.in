@@ -1,0 +1,20 @@
+# The source distribution has to be buildable on its own: setup.py's
+# build_ext step shells out to tools/build_libsedumi.sh, which compiles
+# every csrc/*.c into libsedumi.so/.dylib/.dll. Neither directory is
+# something setuptools includes by default (they are not Python
+# packages and are not referenced by any `sources=` list -- the
+# Extension in setup.py is a deliberately source-less placeholder), so
+# without these lines `pip install sedumipy` on any platform with no
+# matching wheel -- Linux aarch64, Intel macOS, Alpine/musl, 32-bit or
+# ARM Windows -- downloads the sdist and fails at build_ext with a
+# missing build script.
+recursive-include csrc *.c *.h
+include tools/build_libsedumi.sh
+
+# Not needed to build, but makes `pytest tests/` work in an unpacked
+# sdist: the test suite compares against committed Octave-generated
+# oracle fixtures (see CONTRIBUTING.md section 8), and tests/*.py alone
+# (all setuptools includes by default) would fail to load them.
+recursive-include tests/fixtures *
+
+include CHANGELOG.md CONTRIBUTING.md

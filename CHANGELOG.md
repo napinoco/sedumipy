@@ -1,12 +1,17 @@
 # Changelog
 
 All notable changes to this project are documented here. Format loosely
-follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this
-project has not yet made a numbered release, so entries so far are
-grouped by phase (see [`CONTRIBUTING.md`](CONTRIBUTING.md) §2 for the
-full phase-by-phase status and history).
+follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) §2 for the full phase-by-phase
+status and history behind these entries, and
+[`RELEASING.md`](RELEASING.md) for how a release is cut.
 
 ## [Unreleased]
+
+## [0.0.1] - 2026-09-05
+
+First release published to [PyPI](https://pypi.org/project/sedumipy/):
+`pip install sedumipy`. Everything below is the work that got it there.
 
 ### Added
 
@@ -52,7 +57,8 @@ full phase-by-phase status and history).
   other OpenBLAS copies in one process) are handled.
 - Wheel builds via cibuildwheel (`.github/workflows/wheels.yml`) for
   Linux (manylinux), macOS, and Windows (MSYS2/MinGW toolchain, gcc
-  only now); not yet published to PyPI. Linux and Windows now link
+  only now), uploaded to PyPI on release via Trusted Publishing (see
+  [`RELEASING.md`](RELEASING.md)). Linux and Windows now link
   scipy-openblas64 (see above) as their BLAS, vendored into the wheel by
   `auditwheel` on Linux and `delvewheel repair` (via
   `tools/repair_windows_wheel.py`) on Windows; macOS is unchanged --
@@ -70,4 +76,6 @@ full phase-by-phase status and history).
 
 - Complex Hermitian PSD problems (`K.scomplex`/`K.ycomplex`) are out of
   scope.
-- Not yet published to PyPI.
+- No wheels for Linux `aarch64`, Intel macOS, Alpine/musl, or 32-bit/ARM
+  Windows: those platforms install from the source distribution, which
+  needs a C compiler and a BLAS (see `docs/installation.rst`).

@@ -70,7 +70,25 @@ here is free, the same mistake on PyPI costs a version number.
    at <https://test.pypi.org/project/sedumipy/> -- this is the last
    chance to fix how the README, metadata and links look.
 
+3. If the rehearsal turns up something to fix, **rehearse the fix under
+   a new version number**. Neither index ever lets a filename be
+   re-uploaded, TestPyPI included, so a second run at the same version
+   cannot replace what is already up there -- `skip-existing: true` in
+   the publish job only turns that into a skip instead of a failed run,
+   which means an unchanged page after a re-run is the expected
+   behaviour, not a broken upload. Use a throwaway suffix
+   (`0.0.1.dev1`, `0.0.1.dev2`, ...) while rehearsing, and set the
+   version to the real `0.0.1` only for the release itself. Nothing
+   uploaded to TestPyPI constrains what PyPI will accept: they are
+   separate indexes, so `0.0.1` remains free there however many
+   rehearsals it took.
+
 ## The real release
+
+Everything here happens on `main`: the release tag has to point at a
+commit that already contains the publish job, and `workflow_dispatch`
+renders its inputs from the default branch's copy of the workflow, so
+merge the release-prep branch before rehearsing.
 
 1. Bump `version` in `pyproject.toml`, move the `CHANGELOG.md`
    `[Unreleased]` entries under the new version heading, and merge that

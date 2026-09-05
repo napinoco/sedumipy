@@ -341,7 +341,7 @@ def pretransfo(At, b, c, K: dict, pars: dict):
         vv_list.append(vt)
         nb_off += n_nb
 
-    if K_rsdpN:
+    if np.any(sreal):
         dsize = Ks[sreal].astype(np.int64)
         sdpL = int((dsize.astype(np.int64) ** 2).sum())
         jstrt_all = np.concatenate([[N_flqr + 1], (Ks.astype(np.int64) ** 2)[:-1]]).cumsum()
@@ -361,7 +361,7 @@ def pretransfo(At, b, c, K: dict, pars: dict):
         vv_list.append(np.ones(sdpL, dtype=np.complex128))
         nb_off += sdpL
 
-    if K_rsdpN < Ks.size:
+    if np.any(scplx):
         dsize = Ks[scplx].astype(np.int64)
         jsize = dsize.astype(np.int64) ** 2
         sdpL = int(2 * jsize.sum())

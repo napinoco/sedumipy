@@ -122,11 +122,35 @@ jobs:
       - run: python -m pytest tests/ -q
 
   test-windows:
-    # Separate from the `test` matrix above: needs MSYS2 (bash/gcc/
-    # openblas) on PATH first so `pip install -e .[test]` can build
-    # libsedumi.dll -- see setup.py's and tools/build_libsedumi.sh's
-    # Windows notes.
+    # Separate from the `test` matrix above: needs MSYS2 (bash/gcc, and
+    # for one of the two BLAS choices below openblas too) on PATH first
+    # so `pip install -e .[test]` can build libsedumi.dll -- see
+    # setup.py's and tools/build_libsedumi.sh's Windows notes.
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both BLAS choices tools/build_libsedumi.sh can make on
+        # Windows, for the same reason the Linux `test` job above runs
+        # three: the BLAS is the axis that decides these numerical
+        # comparisons.
+        #
+        # scipy-openblas64 is the one the *published wheels* link (see
+        # pyproject.toml's [tool.cibuildwheel.windows]), and it is ILP64
+        # -- 64-bit BLAS integers, a different `blasint` (see
+        # csrc/sedumi_platform.h) than everything else here. Until this
+        # entry existed, the only Windows check of it was wheels.yml's
+        # test-command, which solves one 2x2 LP and so never reaches the
+        # sparse Cholesky, dense-column preconditioning or PSD cone
+        # paths where an integer-width mistake would actually surface.
+        # The full suite against the exact BLAS users get is what closes
+        # that gap; Linux already covers ILP64 this way.
+        #
+        # msys2-openblas is the documented fallback for a machine that
+        # cannot pip-install scipy-openblas64 (see
+        # docs/installation.rst), so it needs its own run rather than
+        # being replaced.
+        blas: [scipy-openblas64, msys2-openblas]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -154,11 +178,21 @@ jobs:
           Add-MpPreference -ExclusionPath 'C:\toolchain-mingw64'
           Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled, AMServiceEnabled
           Get-MpPreference | Select-Object DisableRealtimeMonitoring, ExclusionPath, PUAProtection
+      # gcc is needed either way (MSVC cannot build this -- see
+      # setup.py's WINDOWS_BUILD_HELP); mingw-w64-x86_64-openblas only
+      # for the fallback entry. Deliberately NOT installed for the
+      # scipy-openblas64 entry: its absence is what proves that entry
+      # really linked scipy-openblas64, since build_libsedumi.sh's only
+      # other Windows option is `-lopenblas` against exactly this
+      # package, which would then fail to link rather than silently
+      # standing in for it.
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+          install: >-
+            mingw-w64-x86_64-gcc
+            ${{ matrix.blas == 'msys2-openblas' && 'mingw-w64-x86_64-openblas' || '' }}
       # `shell: msys2 {0}` is the action's own supported way to run
       # commands inside the environment (unlike our raw `bash`
       # invocations elsewhere, which have had their own PATH/mount
@@ -183,13 +217,25 @@ jobs:
       # avoids it regardless of what the actual cause turns out to be.
       - name: Verify MSYS2 gcc/openblas, then copy it out of C:\msys64
         shell: msys2 {0}
+        env:
+          BLAS: ${{ matrix.blas }}
         run: |
-          if [ ! -x /mingw64/bin/gcc.exe ] || [ ! -f /mingw64/lib/libopenblas.dll.a ]; then
-            echo "gcc.exe/libopenblas missing after setup-msys2's install -- forcing a real reinstall"
-            pacman -Rns --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas 2>&1 || true
-            pacman -S --noconfirm --needed --overwrite '*' mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+          # Which packages this entry actually asked for, so the
+          # missing-file check and the reinstall below stay in step with
+          # the `install:` list above rather than hardcoding both.
+          pkgs="mingw-w64-x86_64-gcc"
+          missing() { [ ! -x /mingw64/bin/gcc.exe ]; }
+          if [ "$BLAS" = "msys2-openblas" ]; then
+            pkgs="$pkgs mingw-w64-x86_64-openblas"
+            missing() { [ ! -x /mingw64/bin/gcc.exe ] || [ ! -f /mingw64/lib/libopenblas.dll.a ]; }
           fi
-          ls -la /mingw64/bin/gcc.exe /mingw64/lib/libopenblas.dll.a
+          if missing; then
+            echo "$pkgs missing after setup-msys2's install -- forcing a real reinstall"
+            pacman -Rns --noconfirm $pkgs 2>&1 || true
+            pacman -S --noconfirm --needed --overwrite '*' $pkgs
+          fi
+          ls -la /mingw64/bin/gcc.exe
+          [ "$BLAS" = "msys2-openblas" ] && ls -la /mingw64/lib/libopenblas.dll.a
           /mingw64/bin/gcc.exe --version
           mkdir -p /c/toolchain-mingw64
           cp -r /mingw64 /c/toolchain-mingw64/mingw64
@@ -224,7 +270,22 @@ jobs:
             Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -MaxEvents 30 -ErrorAction SilentlyContinue |
               Format-Table TimeCreated, Id, LevelDisplayName, Message -Wrap -AutoSize | Out-String -Width 300 | Write-Host
           }
-      - run: pip install -e .[test]
+      - name: Install sedumipy
+        shell: bash
+        run: |
+          # Same shape as the Linux `test` job's install step above, and
+          # for the same reason: scipy-openblas64 is not in this
+          # project's [build-system] requires (see pyproject.toml's
+          # comment on why), so an isolated build would not see the copy
+          # just installed -- and --no-build-isolation then means pip
+          # will not install setuptools>=68 either, hence installing it
+          # explicitly.
+          if [ "${{ matrix.blas }}" = "scipy-openblas64" ]; then
+            pip install setuptools scipy-openblas64==0.3.34.106.0
+            pip install -e .[test] --no-build-isolation
+          else
+            pip install -e .[test]
+          fi
       - run: python -m pytest tests/ -q
 
   benchmarks-mini:

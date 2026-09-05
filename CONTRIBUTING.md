@@ -185,6 +185,7 @@ sedumipy/                    # repository root
       sedumi.py                  # top-level driver (wires everything together)
       matio.py                   # Phase 4: read/write .mat problem/solution files
       sdpa.py                    # Phase 4: read/write SDPA sparse (.dat-s) format
+      cvxpy_interface.py         # optional: sedumipy as a cvxpy solver (imports cvxpy, nothing else imports it)
   tests/
     test_*.py                  # per-module verification tests (oracle comparison)
     fixtures/                  # oracle data generated on real Octave (committed)

@@ -46,6 +46,15 @@ Issues = "https://github.com/napinoco/sedumipy/issues"
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
 docs = ["sphinx>=7.0", "furo", "myst-parser"]
+# Only sedumipy.cvxpy_interface needs this, and nothing in the package
+# imports it otherwise -- see that module's own docstring. The hook it
+# relies on (a Solver instance passed straight to
+# Problem.solve(solver=...)) is much older than this lower bound, which
+# is simply the oldest cvxpy release tests/test_cvxpy_interface.py has
+# actually been run against (1.5.4, 1.6.7 and 1.9.2 all pass): 1.4 and
+# earlier need numpy 1.x, which this package does not currently work on
+# regardless of cvxpy.
+cvxpy = ["cvxpy>=1.5"]
 
 [tool.pytest.ini_options]
 markers = [

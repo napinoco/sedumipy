@@ -10,6 +10,18 @@ status and history behind these entries, and
 
 ## [0.0.2] - 2026-09-05
 
+### Added
+
+- `sedumipy.cvxpy_interface`: sedumipy as a
+  [cvxpy](https://www.cvxpy.org/) solver, via cvxpy's custom-solver hook
+  (`problem.solve(solver=SEDUMIPY())`) -- so it works against a stock
+  cvxpy install, with nothing to merge into cvxpy itself. Covers the
+  same LP/SOCP/SDP scope as the solver (cvxpy refuses exponential/power
+  cone and mixed-integer problems for it rather than mis-solving them),
+  returns primal and dual values and cvxpy's own solver statuses, and
+  passes `solve()`'s extra keyword arguments through as `pars`. Install
+  with `pip install sedumipy[cvxpy]`; see `docs/usage.rst`.
+
 ### Fixed
 
 - `sedumi()` raised `IndexError: index 0 is out of bounds for axis 0

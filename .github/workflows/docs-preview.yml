@@ -1,0 +1,52 @@
+name: docs-preview
+
+# Builds and publishes a throwaway Sphinx preview for a PR, at
+# https://napinoco.github.io/sedumipy/pr-preview/pr-<number>/, so a docs
+# change can be reviewed rendered rather than as a diff of .rst source.
+# rossjrw/pr-preview-action posts/updates the preview link as a PR
+# comment and, on the `closed` event, removes the preview again -- both
+# by committing to the gh-pages branch (see docs.yml's own comment on
+# why that deploy mechanism, and on the two manual repo settings it and
+# this workflow both depend on).
+#
+# Gated on paths so a PR that never touches docs neither gets nor needs
+# a preview; `closed` is included in `types` (not just `paths`) so a PR
+# that DID touch docs still gets its preview cleaned up on merge/close.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+    paths:
+      - "docs/**/*.rst"
+      - "docs/conf.py"
+      - "docs/requirements.txt"
+      - ".github/workflows/docs-preview.yml"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: docs-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: github.event.action != 'closed'
+        with:
+          python-version: "3.12"
+      - run: pip install -r docs/requirements.txt
+        if: github.event.action != 'closed'
+      - run: sphinx-build -b html docs docs/_build/html
+        if: github.event.action != 'closed'
+      - run: touch docs/_build/html/.nojekyll
+        if: github.event.action != 'closed'
+      # No source-dir on `closed`: the action auto-detects removal from
+      # the event and needs nothing built for that.
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: docs/_build/html
+          preview-branch: gh-pages

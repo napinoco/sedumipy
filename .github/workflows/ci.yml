@@ -88,6 +88,16 @@ jobs:
           else
             pip install -e .[test]
           fi
+      - name: Install cvxpy
+        # For tests/test_cvxpy_interface.py, which skips itself when
+        # cvxpy is absent. Installed as its own step (not as the
+        # `.[test,cvxpy]` extra) so the --no-build-isolation case above
+        # stays about building libsedumi.so and nothing else, and only
+        # on Linux: the interface is pure Python, so the macOS/Windows
+        # jobs -- which exist to exercise a different BLAS and a
+        # different compiler toolchain -- would re-run identical
+        # assertions for the cost of the install.
+        run: pip install cvxpy
       - run: python -m pytest tests/ -q
 
   test-macos:

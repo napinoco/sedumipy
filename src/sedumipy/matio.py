@@ -1,6 +1,6 @@
 """Phase 4: .mat I/O for SeDuMi-style problem/solution files.
 
-Not a port of any particular upstream .m file -- real SeDuMi problems and
+Not a port of any particular upstream .m file -- original SeDuMi problems and
 solutions are just plain MATLAB structs/arrays saved with MATLAB's own
 `save`, so there is no "reference .m implementation" to port here, unlike
 the rest of this package. This module exists so callers don't have to
@@ -101,6 +101,6 @@ def read_mat(path):
 def write_solution_mat(path, x, y, info) -> None:
     """write_solution_mat(path, x, y, info): saves sedumi()'s own return
     values (x, y, info) as a MATLAB struct-compatible .mat file, the
-    layout real SeDuMi's own examples/*.mat solution dumps use (a plain
+    layout original SeDuMi's own examples/*.mat solution dumps use (a plain
     "x"/"y" vector plus an "info" struct)."""
     scipy.io.savemat(path, {"x": np.asarray(x), "y": np.asarray(y), "info": info})

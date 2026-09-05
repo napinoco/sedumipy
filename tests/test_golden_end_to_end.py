@@ -1,11 +1,11 @@
 """Phase 5: end-to-end regression of sedumipy.sedumi() against the Phase 0
 golden reference, on the real (not synthetic) SDPLIB-derived problems used
-to validate real SeDuMi itself.
+to validate original SeDuMi itself.
 
 This is the companion test test_golden_reference.py's own docstring
 promised ("a companion test module will load the same golden files and
 compare them against sedumipy's own output"): tests/golden/*_golden.mat
-only has the *outputs* Octave's real sedumi.m produced (Phase 0); the
+only has the *outputs* Octave's original sedumi.m produced (Phase 0); the
 matching *inputs* (At, b, c, K) live in the vendor/sedumi-upstream
 submodule's examples/ directory (not committed to this repo, since they're
 upstream SeDuMi's own example data), so this test needs the submodule

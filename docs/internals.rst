@@ -1,8 +1,8 @@
 Internals
 =========
 
-Everything on this page is a direct, module-per-``.m``-file port of real
-SeDuMi's own internals (interior-point iteration, cone math,
+Everything on this page is a direct, module-per-``.m``-file port of
+original SeDuMi's own internals (interior-point iteration, cone math,
 symbolic/numeric factorization, ...) and is not a stable public API --
 this exists for contributors reading or extending the port, not for end
 users. Each module's own docstring names the ``.m``/``.c`` file it ports

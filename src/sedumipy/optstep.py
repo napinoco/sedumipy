@@ -7,7 +7,7 @@ simplification of convenience -- it's the ONLY path optstep.m's real
 caller (sedumi.m) ever reaches: sedumi.m calls optstep.m exactly once,
 gated by `if lponly && (rate < 0.05)`, and `lponly = (K.l==length(c))`
 forces K.q and K.s empty too. The sum(K.s)!=0 branch (getada1/getada2/
-getada3) is genuine dead code in real SeDuMi, so it isn't ported here;
+getada3) is genuine dead code in original SeDuMi, so it isn't ported here;
 raises NotImplementedError if K.q or K.s is nonempty instead of
 silently answering wrong.
 

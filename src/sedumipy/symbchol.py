@@ -11,13 +11,13 @@ entries are structurally nonzero).
 This mirrors symbchol.m's own `spars(ADA)==1` branch exactly (not just
 approximately): for a genuinely fully dense ADA (every entry nonzero --
 common for small test problems built from dense random data, since
-A*diag(positive)*A' for a fully dense A is itself fully dense), real
+A*diag(positive)*A' for a fully dense A is itself fully dense), original
 SeDuMi skips minimum-degree ordering entirely and uses the identity
 permutation with one big supernode instead. This is not merely a
 performance shortcut that any ordering would emulate equally well:
 ordmmd() on a fully-connected graph does NOT generally reduce to the
 identity permutation, so using it there would give the numeric
-Cholesky a different pivot order than real SeDuMi's, and interior-point
+Cholesky a different pivot order than original SeDuMi's, and interior-point
 methods are sensitive enough to that to change the exact iteration
 count (confirmed by direct comparison against the real Octave build --
 this was this port's first sedumi.py oracle mismatch, on dense-A LP

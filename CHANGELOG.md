@@ -15,7 +15,7 @@ full phase-by-phase status and history).
   library (`libsedumi.so`/`.dylib`, no MATLAB/Octave/MEX dependency),
   loaded via `ctypes`. LP, second-order-cone (SOCP), and semidefinite
   (SDP, `K.s`) problems are in scope and verified against
-  real Octave/SeDuMi output (to tight numerical tolerances -- see
+  original Octave/SeDuMi output (to tight numerical tolerances -- see
   `docs/status.rst`), including on published
   [SDPLIB](https://github.com/vsdp/SDPLIB) and
   [DIMACS](https://github.com/vsdp/DIMACS) benchmark problems. Dense-

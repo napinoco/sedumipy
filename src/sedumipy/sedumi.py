@@ -8,7 +8,7 @@ problems. sedumi.m's own main loop branches on `sum(K.s)==0` for how it
 rebuilds ADA every iteration: the `==0` branch uses getada.py directly;
 the nonzero branch uses getada_psd.py's build_aord()/getada_psd()
 (getada1->getada2->getada3 orchestration), with its own one-time
-pre-loop Aord/getsymbada/symbchol setup -- real sedumi.m runs that setup
+pre-loop Aord/getsymbada/symbchol setup -- original sedumi.m runs that setup
 unconditionally for both branches, but this port's `K.s==0` path keeps
 its existing (already-tested) simpler post-`sdinit` ordering instead of
 being rewritten to match; the two branches genuinely differ here.
@@ -98,7 +98,7 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
     else:
         # ---- one-time symbolic Cholesky pattern for ADA ----
-        # Real sedumi.m builds this via getsymbada.m *before* sdinit.m
+        # Original sedumi.m builds this via getsymbada.m *before* sdinit.m
         # ever runs, unconditionally for both the K.s==0 and K.s!=0
         # cases (this module's SCOPE docstring already notes the
         # has_psd branch above replicates that unconditional setup via

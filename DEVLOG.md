@@ -16,7 +16,7 @@ module or symptom you care about.
 
 ## Bugs and gotchas found so far (lessons learned)
 
-- **Real SeDuMi's "all-or-nothing across every block" branch is not
+- **Original SeDuMi's "all-or-nothing across every block" branch is not
   ported as-is — clamp block by block instead.** `widelen.m`/
   `trydif.m`/`maxstep.m` all contain, for the Lorentz-cone blocks'
   discriminant,
@@ -38,10 +38,10 @@ module or symptom you care about.
   `detxz` and whose sum is `2*halfxz`, so `tmp` is identically
   `((lab1-lab2)/2)^2` — a perfect square. It only goes negative from
   rounding error when a single block's two eigenvalues nearly coincide,
-  and when they coincide *exactly* it becomes exactly 0 — which real
-  SeDuMi's strict `> 0` also rejects (a routine occurrence in problems
-  structured from duplicates of a single Lorentz block). In practice,
-  the observed triggering value wasn't a tiny negative number but
+  and when they coincide *exactly* it becomes exactly 0 — which
+  original SeDuMi's strict `> 0` also rejects (a routine occurrence in
+  problems structured from duplicates of a single Lorentz block). In
+  practice, the observed triggering value wasn't a tiny negative number but
   **exactly `-0.0`**.
 
   So the port **clamps per block** instead:
@@ -51,34 +51,34 @@ module or symptom you care about.
   ```
 
   For the one block whose discriminant is non-positive, this is exactly
-  equivalent to real SeDuMi's fallback (`sqrt(0)==0`); for every other
-  block, it keeps the exact expression real SeDuMi was discarding, while
-  still satisfying real SeDuMi's own safety goal of never passing a
+  equivalent to original SeDuMi's fallback (`sqrt(0)==0`); for every other
+  block, it keeps the exact expression original SeDuMi was discarding, while
+  still satisfying original SeDuMi's own safety goal of never passing a
   negative value to `sqrt` — in other words, this isn't a tradeoff, it
-  is **strictly more accurate than either of real SeDuMi's branches**.
+  is **strictly more accurate than either of original SeDuMi's branches**.
 
   Note that `maxstep.m`'s version is a **safety bug, not just an
   accuracy one**: in the fallback, `norm2` is used unsquared in
   `reltr - norm2` without ever taking a square root (a dimensional
   mismatch, subtracting a linear quantity from a squared one). When the
   discriminant is below 1 — the normal case after scaling — `v <
-  sqrt(v)`, so real SeDuMi **overestimates** the step length to the cone
+  sqrt(v)`, so original SeDuMi **overestimates** the step length to the cone
   boundary. Measured on nb_L2, this fired 5 times out of 64, and all 5
   were overestimates.
 
-  Effect (measured on DIMACS, toggling all three sites between real
-  SeDuMi's branch and the clamp):
+  Effect (measured on DIMACS, toggling all three sites between
+  original SeDuMi's branch and the clamp):
 
-  | Problem | Real SeDuMi's branch | Clamped | Real Octave/MEX |
+  | Problem | Original SeDuMi's branch | Clamped | Real Octave/MEX |
   |---|---|---|---|
   | nb_L2 | numerr=2, iter=10 | **numerr=0, iter=16** | numerr=0, iter=16 |
   | nql180old | numerr=2, iter=12 (cx=18.08 vs by=7.08) | **numerr=1, iter=42** (cx≈by to 8 digits) | numerr=1, iter=54 |
-  | qssp30old | numerr=2 (cx=6.6017 vs by=6.3582) | **numerr=1** (cx=6.496695, published value 6.4966749) | numerr=2 (real SeDuMi also fails) |
+  | qssp30old | numerr=2 (cx=6.6017 vs by=6.3582) | **numerr=1** (cx=6.496695, published value 6.4966749) | numerr=2 (original SeDuMi also fails) |
 
-  The lesson: **when a branch in real SeDuMi's code exists as a
+  The lesson: **when a branch in original SeDuMi's code exists as a
   safeguard against a "mathematically impossible" case, porting it
   verbatim can make that safeguard fire far too broadly.** "It's written
-  that way in real SeDuMi" is the right default porting policy, but
+  that way in original SeDuMi" is the right default porting policy, but
   checking the invariant the condition is trying to protect (here, "the
   discriminant is a perfect square, hence non-negative") can uniquely
   determine an implementation that is strictly better than the
@@ -250,13 +250,13 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
    `neighborhood.py` — a known, intentional design choice). Conversely,
    7 bindings in `_native.py` (`realdot`/`realssqr`/`scalarmul`/
    `addscalarmul`/`blkmul`/`mJdetd`/`cholsplit`) turned out to be called
-   from nowhere else, but each was confirmed **unused in real SeDuMi
+   from nowhere else, but each was confirmed **unused in original SeDuMi
    itself** too (`blkmul.c`/`mJdetd.c` aren't even in
    `install_sedumi.m`'s MEX build target list — dead code in the
    original already; `cholsplit()`'s output, `L.split`, doesn't appear
-   in `blkchol.c`'s mex argument list and is never read even in real
-   SeDuMi; `realdot` etc. are BLAS-style helpers bound only for Phase
-   1's smoke test, with no independent MEX target of their own).
+   in `blkchol.c`'s mex argument list and is never read even in
+   original SeDuMi; `realdot` etc. are BLAS-style helpers bound only
+   for Phase 1's smoke test, with no independent MEX target of their own).
    Concluded no further work is needed, and documented this inventory
    itself, including why each is unused, in `_native.py`'s module
    docstring.
@@ -281,7 +281,7 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
      (`read_sdpa`/`write_sdpa`). `read_sdpa` is a faithful port of
      `conversion/fromsdpa.m` (confirmed against a real Octave oracle,
      `tools/generate_sdpa_oracle.m`/`tests/fixtures/sdpa/`).
-     `write_sdpa` has no counterpart in real SeDuMi (real SeDuMi's
+     `write_sdpa` has no counterpart in original SeDuMi (original SeDuMi's
      `conversion/writesdp.m` writes a different, unrelated format,
      SDPpack, not SDPA) and is new code, but manually confirmed correct
      by writing out `vendor/sedumi-upstream/examples/arch0.mat` with
@@ -427,12 +427,12 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
    goes negative is rounding error — meaning "which branch to take" is
    actually uniquely determined. Remeasuring this time also showed the
    value wasn't a tiny negative number like the previously-assumed
-   `±1.78e-15`, but **exactly `-0.0`**: real SeDuMi's strict `> 0` was
+   `±1.78e-15`, but **exactly `-0.0`**: original SeDuMi's strict `> 0` was
    simply rejecting zero (which happens routinely on problems built from
    duplicates of a single Lorentz block, where two eigenvalues coincide
    exactly). Clamping with `np.sqrt(np.maximum(tmp, 0.0))` block by
-   block leaves the affected block exactly equivalent to real SeDuMi's
-   fallback, keeps the exact expression real SeDuMi discarded for the
+   block leaves the affected block exactly equivalent to original SeDuMi's
+   fallback, keeps the exact expression original SeDuMi discarded for the
    other 838 blocks, and still never passes a negative value to `sqrt`.
    Result: **nb_L2 improved from numerr=2/iter=10 to numerr=0/iter=16**,
    matching both the real Octave/MEX build's iteration count (16) and
@@ -560,9 +560,9 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
    numerically demanding enough that the console prints `skip=5361`
    worth of skipped Cholesky pivots), while this port returns
    `numerr=2` (a complete failure) at `iter=27` (`feasratio=0.90`,
-   `r0=0.53`) — unlike `nql30old`/`qssp30old`, where "real SeDuMi fails
+   `r0=0.53`) — unlike `nql30old`/`qssp30old`, where "original SeDuMi fails
    the same way too, so it's not a porting bug," this was a **genuine
-   robustness gap**, failing earlier and worse than real SeDuMi.
+   robustness gap**, failing earlier and worse than original SeDuMi.
    `qssp180old` (the largest problem in this family, ~36MB) didn't
    finish within the earlier session's time budget (550s for both the
    Python and real-hardware versions) and was left unverified, but
@@ -575,46 +575,46 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
    log per-iteration elapsed time confirmed the iterations were
    proceeding steadily rather than hanging partway through). **The
    failing iteration number (30) matches exactly**, with none of the
-   "fails earlier and worse than real SeDuMi" robustness gap seen on
+   "fails earlier and worse than original SeDuMi" robustness gap seen on
    `nql180old` — confirming this is the same genre of problem as
-   `qssp30old`/`nql30old`, where real SeDuMi fails the same way too (not
+   `qssp30old`/`nql30old`, where original SeDuMi fails the same way too (not
    a porting bug).
    **Addendum: the `nql180old` robustness gap is also resolved** (via
    the `all(tmp>0)` fix in item 6 above). This had been the one open
-   item this section still listed as "fails earlier and worse than real
-   SeDuMi = a genuine robustness gap," but remeasuring with all three
-   sites clamped block-by-block:
+   item this section still listed as "fails earlier and worse than
+   original SeDuMi = a genuine robustness gap," but remeasuring with
+   all three sites clamped block-by-block:
 
    | nql180old | numerr | iter | cx vs by |
    |---|---|---|---|
-   | Real SeDuMi's branch (all 3 sites) | **2** (complete failure) | 12 | 18.08 vs 7.08 |
+   | Original SeDuMi's branch (all 3 sites) | **2** (complete failure) | 12 | 18.08 vs 7.08 |
    | Block-wise clamp | **1** | 42 | match to 8 digits |
    | Real Octave/MEX build | 1 | 54 | - |
 
-   Where real SeDuMi's behavior breaks down at iteration 12 with `cx`/
+   Where original SeDuMi's behavior breaks down at iteration 12 with `cx`/
    `by` still 2.5x apart, the clamped version converges to `cx=
    0.9311428505`/`by=0.9311428684` (matching to 8 digits) and ends with
    `numerr=1` — **reaching the same `numerr=1` in fewer iterations (42)
    than the real hardware build (54)** — closing the "fails earlier and
-   worse than real SeDuMi" gap (confirmed via internal consistency,
+   worse than original SeDuMi" gap (confirmed via internal consistency,
    since the DIMACS README's reference value is "N/A" for this
    problem). This problem triggers the fallback at an unusually high
    rate (`widelen`: 6 of 12 calls = 50%; `maxstep`: 5 of 50), showing
-   real SeDuMi's branch was firing constantly here.
+   original SeDuMi's branch was firing constantly here.
    The same fix also turns `qssp30old` from `numerr=2` into `numerr=1`,
    and moreover now returns **a solution matching the DIMACS README's
    published value of `6.4966749`** (`cx=6.496695`) — since **the real
    Octave/MEX build itself fails with `numerr=2`** on this problem, this
-   case isn't "on par with real SeDuMi" but **better than real SeDuMi**.
-   Together with `nql30old` (published value `0.9460`), both were
-   promoted from `tests/test_benchmarks.py`'s exclusion list to
+   case isn't "on par with original SeDuMi" but **better than original
+   SeDuMi**. Together with `nql30old` (published value `0.9460`), both
+   were promoted from `tests/test_benchmarks.py`'s exclusion list to
    parametrized tests checked against their published values.
 8. **Fixed two Python-level performance bugs found via `qssp180old`'s
    cProfile output (the main reason this port was about 2.1x slower
-   than real SeDuMi; now fixed).**
+   than original SeDuMi; now fixed).**
    While confirming `qssp180old`'s `numerr=2` match in item 7, an
    additional question came up: "why is this port about 2.1x slower
-   than real SeDuMi (1705s on real hardware vs. 3557s in this port)?"
+   than original SeDuMi (1705s on real hardware vs. 3557s in this port)?"
    Profiling just the first 5 iterations with `cProfile`
    (`pars["maxiter"]=5` to cut it short, 462s) found two issues, both
    pure Python-level overhead with zero effect on the computed result:
@@ -659,7 +659,7 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
    the profile entirely. The largest remaining cost is
    `numeric_cholesky` (the real C-kernel Cholesky factorization, 75.5s)
    — which is actually the healthy outcome, since that's the dominant
-   cost in real SeDuMi too. The full test suite (247 tests),
+   cost in original SeDuMi too. The full test suite (247 tests),
    `pytest -m mini` (46 problems checked against published SDPLIB/DIMACS
    reference values), and `pytest -m extended` (16 more, including
    problems with a high LP+SOCP ratio) all pass with no regressions.
@@ -667,7 +667,7 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
    7) — the computed result is bug-for-bug identical.
 9. **Continuing item 8: investigated the remaining performance
    bottleneck — rebuilding ADA/DAt.q as sparse matrices turns out to be
-   real SeDuMi's own design, and the `numeric_cholesky` uintp/int64
+   original SeDuMi's own design, and the `numeric_cholesky` uintp/int64
    round-trip can only be partially reduced.**
 
    Further analyzing the post-item-8 `qssp180old` first-5-iteration
@@ -675,7 +675,7 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
 
    - **The cost of rebuilding ADA/DAt.q as scipy sparse matrices from
      scratch every iteration (8.8s inside scipy internals via
-     `numpy.array`) turns out to be real SeDuMi's own design.**
+     `numpy.array`) turns out to be original SeDuMi's own design.**
      Reading the real `.m`-only (not MEX) `vendor/sedumi-upstream/
      getada.m` used by the `sum(K.s)==0` path (`qssp180old`'s path)
      shows it **creates a brand-new empty sparse matrix every time**
@@ -693,10 +693,10 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
      PSD-block-bearing `sum(K.s)!=0` path's `getada1.c`/`getada2.c`/
      `getada3.c` reuse the sparse pattern that `getsymbada` fixes once,
      writing **only the values** in place into the same global array
-     `ADA_sedumi_` — real SeDuMi has an asymmetric design here, reusing
+     `ADA_sedumi_` — original SeDuMi has an asymmetric design here, reusing
      when PSD blocks are present and rebuilding from scratch when they
      aren't; the latter path, which `qssp180old` uses, appears to simply
-     never have been optimized in real SeDuMi itself.)
+     never have been optimized in original SeDuMi itself.)
    - **`numeric_cholesky`'s `Lir.astype(np.int64)`/
      `Ljc.astype(np.int64)` calls (nearly all of item 8's 18s of
      `astype` time) are an unavoidable cost of using this container

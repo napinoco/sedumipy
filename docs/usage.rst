@@ -1,29 +1,43 @@
 Usage
 =====
 
-The public entry point is :func:`sedumipy.sedumi`, matching real SeDuMi's
-own signature:
+The public entry point is :func:`sedumipy.sedumi`, matching original
+SeDuMi's own signature:
 
 .. code-block:: python
 
    x, y, info = sedumipy.sedumi(A, b, c, K, pars=None, **pars_kwargs)
 
-which solves
+which solves the primal problem
 
 .. math::
 
-   \text{minimize } c^T x \quad \text{such that } Ax = b,\ x \in K
+   \text{(P)} \qquad \min_x\ c^T x \quad \text{such that } Ax = b,\ x \in K
 
-and its dual. ``A`` may be given either as :math:`m \times n` or its
-transpose :math:`n \times m` (SeDuMi disambiguates by shape, matching
-real SeDuMi); dense NumPy arrays and SciPy sparse matrices are both
-accepted.
+together with its dual
+
+.. math::
+
+   \text{(D)} \qquad \max_{y,s}\ b^T y \quad \text{such that } A^T y + s = c,\ s \in K^*
+
+One call solves both: ``sedumi()`` returns the primal optimum ``x`` and
+the dual optimum ``y`` (the dual slack ``s = c - A^T y`` is not returned,
+but is one line to recompute). :math:`K` is the cone the primal variable
+lives in and :math:`K^*` its dual cone, both defined block by block just
+below. This primal-dual pair, and the meaning of each ``K`` field, follow
+original SeDuMi's own convention; see the `Addendum to the SeDuMi User Guide
+<https://sedumi.ie.lehigh.edu/sedumi/files/sedumi-downloads/SeDuMi_Guide_11.pdf>`_
+(Pólik, 2005), Section 2.
+
+``A`` may be given either as :math:`m \times n` or its transpose
+:math:`n \times m` (SeDuMi disambiguates by shape, matching original
+SeDuMi); dense NumPy arrays and SciPy sparse matrices are both accepted.
 
 The cone structure ``K``
 -------------------------
 
 ``K`` is a plain ``dict`` describing how the columns of ``x`` are carved
-up into cones, in the same field-name convention as real SeDuMi:
+up into cones, in the same field-name convention as original SeDuMi:
 
 ============ ===================================================
 ``K["f"]``   number of free (unrestricted) variables
@@ -34,18 +48,302 @@ up into cones, in the same field-name convention as real SeDuMi:
 ``K["s"]``   sizes of positive semidefinite (PSD) cone blocks
 ============ ===================================================
 
+Spelled out, a block of size :math:`n` is constrained to one of:
+
+.. math::
+
+   \begin{aligned}
+   \texttt{K.f} \;&:\; \mathbb{R}^{n}
+     && \text{unrestricted} \\[2pt]
+   \texttt{K.l} \;&:\; \mathbb{R}^{n}_{+} = \bigl\{\, x : x_i \ge 0 \,\bigr\}
+     && \text{nonnegative orthant} \\[2pt]
+   \texttt{K.q} \;&:\; \mathcal{Q}^{n} =
+       \bigl\{\, x : x_1 \ge \lVert (x_2, \ldots, x_n) \rVert \,\bigr\}
+     && \text{Lorentz (second-order) cone} \\[2pt]
+   \texttt{K.r} \;&:\; \mathcal{R}^{n} =
+       \bigl\{\, x : 2 x_1 x_2 \ge \lVert (x_3, \ldots, x_n) \rVert^2,\;
+                     x_1, x_2 \ge 0 \,\bigr\}
+     && \text{rotated Lorentz cone} \\[2pt]
+   \texttt{K.s} \;&:\; \mathcal{S}^{n}_{+} =
+       \bigl\{\, X \in \mathbb{R}^{n \times n} : X = X^T,\; X \succeq 0 \,\bigr\}
+     && \text{PSD cone}
+   \end{aligned}
+
+and :math:`K` is the product of all its blocks. Two conventions are worth
+pinning down, because they differ between solvers: a Lorentz block puts
+its **norm bound in the first entry**, and a rotated block carries a
+**factor of 2** on the :math:`x_1 x_2` product. All of these are
+self-dual (:math:`K^* = K`) except ``K.f``, whose dual is :math:`\{0\}`
+-- so a free block's dual-slack entries are pinned to zero.
+
 Only the fields you need have to be present; omitted fields default to
 none of that cone type. Blocks appear in ``x`` in ``f, l, q, r, s``
-order, each block occupying that many consecutive entries (``s`` blocks
-occupy ``size**2`` entries, stored column-major/vec).
+order, each block occupying that many consecutive entries -- except an
+``s`` block of size :math:`n`, which occupies :math:`n^2` entries, since
+its matrix is stored flattened column-major (see step 2 of the worked
+example below).
+
+A pure-LP problem needs only ``K.l``. For
+
+.. math::
+
+   \min_x\ 7x_1 + 4x_2 + 10x_3 \quad \text{such that}\quad
+   \begin{aligned}
+   3x_1 + x_2 + 2x_3 &= 9, \\
+   x_1 + 2x_2 + 4x_3 &= 8,
+   \end{aligned}
+   \quad x_1, x_2, x_3 \ge 0
+
+the objective coefficients are ``c``, the two constraint rows are ``A``,
+their right-hand sides are ``b``, and ``K`` says all three variables are
+nonnegative:
 
 .. code-block:: python
 
    import numpy as np
    import sedumipy
 
-   # LP: minimize x1 + x2 s.t. x1 = x2 = 1, x >= 0
-   x, y, info = sedumipy.sedumi(np.eye(2), np.array([1.0, 1.0]), np.array([1.0, 1.0]), {"l": 2})
+   A = np.array([[3.0, 1.0, 2.0],
+                 [1.0, 2.0, 4.0]])
+   b = np.array([9.0, 8.0])
+   c = np.array([7.0, 4.0, 10.0])
+
+   x, y, info = sedumipy.sedumi(A, b, c, {"l": 3})
+
+Here ``x = [2, 3, 0]`` and ``y = [2, 1]``, the optima of (P) and (D)
+respectively: both objectives agree at ``c @ x == b @ y == 26``, and the
+dual slack ``c - A.T @ y == [0, 0, 2]`` is zero exactly where ``x`` is
+positive.
+
+Worked example: turning a written model into ``A``, ``b``, ``c``, ``K``
+------------------------------------------------------------------------
+
+Models rarely arrive already in the shape of (P). Far more often you have
+a handful of decision variables and a list of constraints, each asking
+some *affine function of those variables* to be nonnegative, or to have
+bounded norm, or to be positive semidefinite. That is precisely the shape
+of the dual (D), so that is the side to map onto. Take this problem,
+which mixes an LP block, two second-order-cone blocks, and a 3x3 PSD
+block:
+
+.. math::
+
+   \begin{aligned}
+   \max_{y \in \mathbb{R}^3} \quad & 6y_1 + 4y_2 + 5y_3 \\[4pt]
+   \text{s.t.} \quad
+   & 16y_1 - 14y_2 + 5y_3 \le -3, \qquad 7y_1 + 2y_2 \le 5, \\[6pt]
+   & \left\|
+       \begin{pmatrix} 8y_1 + 13y_2 - 12y_3 - 2 \\
+                       -8y_1 + 18y_2 + 6y_3 - 14 \\
+                       y_1 - 3y_2 - 17y_3 - 13 \end{pmatrix}
+     \right\| \le -24y_1 - 7y_2 + 15y_3 + 12,
+     \qquad
+     \left\| \begin{pmatrix} y_1 \\ y_2 \\ y_3 \end{pmatrix} \right\| \le 10, \\[6pt]
+   & \begin{pmatrix}
+       7y_1+3y_2+9y_3 & -5y_1+13y_2+6y_3 & y_1-6y_2-6y_3 \\
+       -5y_1+13y_2+6y_3 & y_1+12y_2-7y_3 & -7y_1-10y_2-7y_3 \\
+       y_1-6y_2-6y_3 & -7y_1-10y_2-7y_3 & -4y_1-28y_2-11y_3
+     \end{pmatrix}
+     \preceq
+     \begin{pmatrix} 68 & -30 & -19 \\ -30 & 99 & 23 \\ -19 & 23 & 10 \end{pmatrix}
+   \end{aligned}
+
+The cone and the objective vector can be read straight off: there are
+:math:`m = 3` variables, so ``b`` is the objective's coefficient vector,
+and the five constraints group into four cone blocks.
+
+.. code-block:: python
+
+   b = np.array([6.0, 4.0, 5.0])
+   K = {"l": 2, "q": [4, 4], "s": [3]}
+
+That leaves ``A`` and ``c``.
+
+Step 1: rewrite every constraint as "constant minus linear"
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(D)'s constraint is :math:`s = c - A^T y \in K^*`, so each block's job is
+to express its own slack :math:`s` as a *constant minus something linear
+in* :math:`y`. Those constants become that block's slice of ``c``, and
+the coefficients of :math:`y_k` become its slice of column :math:`k` of
+:math:`A^T`. Working block by block:
+
+**The LP block** (``K.l = 2``). Move each ``<=`` to a nonnegativity:
+
+.. math::
+
+   16y_1 - 14y_2 + 5y_3 \le -3
+   \;\Longleftrightarrow\;
+   \underbrace{(-3)}_{c_1} - \underbrace{(16y_1 - 14y_2 + 5y_3)}_{\text{row of } A^T} \ge 0
+
+and likewise :math:`5 - (7y_1 + 2y_2) \ge 0`, giving
+:math:`c = (-3, 5)` and rows :math:`(16, -14, 5)`, :math:`(7, 2, 0)`.
+
+**The Lorentz blocks** (``K.q = [4, 4]``). A ``K.q`` block of size 4 is
+one 4-vector :math:`s = (s_0; \bar{s})` constrained by
+:math:`s_0 \ge \|\bar{s}\|` -- **the bound comes first**, then the three
+components whose norm it bounds. So stack the right-hand side on top of
+the norm's argument, then split each of those four entries the same way
+as above:
+
+.. math::
+
+   s = \begin{pmatrix}
+     \;12 - (24y_1 + 7y_2 - 15y_3) \\
+     -2 - (-8y_1 - 13y_2 + 12y_3) \\
+     -14 - (8y_1 - 18y_2 - 6y_3) \\
+     -13 - (-y_1 + 3y_2 + 17y_3)
+   \end{pmatrix}
+   \quad\Longrightarrow\quad
+   c = \begin{pmatrix} 12 \\ -2 \\ -14 \\ -13 \end{pmatrix},\qquad
+   \text{rows of } A^T =
+   \begin{pmatrix} 24 & 7 & -15 \\ -8 & -13 & 12 \\
+                   8 & -18 & -6 \\ -1 & 3 & 17 \end{pmatrix}
+
+The second block, :math:`\|(y_1, y_2, y_3)\| \le 10`, is the same idea
+with nothing to rearrange: :math:`c = (10, 0, 0, 0)` and the rows
+:math:`(0,0,0)`, :math:`(-1,0,0)`, :math:`(0,-1,0)`, :math:`(0,0,-1)`.
+
+**The PSD block** (``K.s = [3]``). Rearranged the same way,
+:math:`M(y) \preceq C` is :math:`C - M(y) \succeq 0`, where the matrix on
+the left splits into one coefficient matrix per variable,
+:math:`M(y) = y_1 A_1 + y_2 A_2 + y_3 A_3`:
+
+.. math::
+
+   A_1 = \begin{pmatrix} 7 & -5 & 1 \\ -5 & 1 & -7 \\ 1 & -7 & -4 \end{pmatrix},\;
+   A_2 = \begin{pmatrix} 3 & 13 & -6 \\ 13 & 12 & -10 \\ -6 & -10 & -28 \end{pmatrix},\;
+   A_3 = \begin{pmatrix} 9 & 6 & -6 \\ 6 & -7 & -7 \\ -6 & -7 & -11 \end{pmatrix}
+
+So the "constant" is the matrix :math:`C` and the "coefficient of
+:math:`y_k`" is the matrix :math:`A_k`. Both are matrices, and neither
+``c`` nor :math:`A^T` has anywhere to put a matrix -- which brings us to
+the one genuinely fiddly part.
+
+Step 2: flatten the PSD block's matrices
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``sedumipy`` has no matrix-valued slots. An ``n``-by-``n`` PSD block is
+stored as ``n**2`` consecutive *scalar* entries of ``x``, ``c``, and
+``s``, in column-major (``vec``) order:
+
+.. math::
+
+   \operatorname{vec}
+   \begin{pmatrix} S_{11} & S_{12} & S_{13} \\
+                   S_{21} & S_{22} & S_{23} \\
+                   S_{31} & S_{32} & S_{33} \end{pmatrix}
+   = (S_{11}, S_{21}, S_{31},\; S_{12}, S_{22}, S_{32},\; S_{13}, S_{23}, S_{33})^T
+
+which is exactly NumPy's ``M.flatten(order="F")``, inverted by
+``v.reshape(3, 3, order="F")``. Note that this is the *full* ``n**2``
+vectorization: all nine entries, with the off-diagonal ones genuinely
+written twice, and no :math:`\sqrt{2}` scaling anywhere. (Some solvers
+instead take a half-vectorized, :math:`\sqrt{2}`-scaled ``svec`` of
+length ``n(n+1)/2``; SeDuMi does not.)
+
+Apply ``vec`` to the matrices from step 1 and the PSD block stops being
+special: ``vec(C)`` is that block's slice of ``c``, and
+``vec(A_k)`` is that block's slice of column ``k`` of :math:`A^T` -- nine
+rows, just as the LP block contributed two and each Lorentz block four.
+
+Step 3: stack the blocks
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Blocks occupy consecutive entries in ``f, l, q, r, s`` order, so ``c`` is
+the blocks' constants concatenated, and :math:`A^T` is the blocks'
+coefficients stacked vertically -- one row per cone coordinate, one
+column per variable :math:`y_k`:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 18 62
+
+   * - block
+     - rows of :math:`A^T`
+     - what those rows hold
+   * - ``K.l = 2``
+     - ``0:2``
+     - coefficients of :math:`y_k` in the two LP rows
+   * - ``K.q[0] = 4``
+     - ``2:6``
+     - norm bound first, then its three components
+   * - ``K.q[1] = 4``
+     - ``6:10``
+     - norm bound first, then its three components
+   * - ``K.s = [3]``
+     - ``10:19``
+     - ``vec(A_k)``, column-major, ``9 = 3**2`` entries
+
+That totals :math:`n = 2 + 4 + 4 + 9 = 19` rows against :math:`m = 3`
+columns. Since ``sedumi()`` accepts ``A`` in either orientation and
+:math:`19 \neq 3`, the stacked :math:`A^T` can be passed as-is:
+
+.. code-block:: python
+
+   import numpy as np
+   import sedumipy
+
+   # K.l block: 2 rows
+   At_l = np.array([[16.0, -14.0, 5.0],
+                    [7.0, 2.0, 0.0]])
+   c_l = np.array([-3.0, 5.0])
+
+   # K.q blocks: 4 rows each, norm bound first
+   At_q1 = np.array([[24.0, 7.0, -15.0],
+                     [-8.0, -13.0, 12.0],
+                     [8.0, -18.0, -6.0],
+                     [-1.0, 3.0, 17.0]])
+   c_q1 = np.array([12.0, -2.0, -14.0, -13.0])
+
+   At_q2 = np.array([[0.0, 0.0, 0.0],
+                     [-1.0, 0.0, 0.0],
+                     [0.0, -1.0, 0.0],
+                     [0.0, 0.0, -1.0]])
+   c_q2 = np.array([10.0, 0.0, 0.0, 0.0])
+
+   # K.s block: 9 rows, one vec() per variable
+   A1 = np.array([[7.0, -5.0, 1.0], [-5.0, 1.0, -7.0], [1.0, -7.0, -4.0]])
+   A2 = np.array([[3.0, 13.0, -6.0], [13.0, 12.0, -10.0], [-6.0, -10.0, -28.0]])
+   A3 = np.array([[9.0, 6.0, -6.0], [6.0, -7.0, -7.0], [-6.0, -7.0, -11.0]])
+   C = np.array([[68.0, -30.0, -19.0], [-30.0, 99.0, 23.0], [-19.0, 23.0, 10.0]])
+
+   At_s = np.column_stack([M.flatten(order="F") for M in (A1, A2, A3)])
+   c_s = C.flatten(order="F")
+
+   At = np.vstack([At_l, At_q1, At_q2, At_s])        # (19, 3)
+   c = np.concatenate([c_l, c_q1, c_q2, c_s])        # (19,)
+   b = np.array([6.0, 4.0, 5.0])
+   K = {"l": 2, "q": [4, 4], "s": [3]}
+
+   x, y, info = sedumipy.sedumi(At, b, c, K, fid=0)
+
+This converges (``info["numerr"] == 0``) to
+``y = [-1.2209, 0.0966, 3.5775]`` with optimal value ``b @ y = 10.9485``.
+
+Reading the answer back out
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``y`` is the model's :math:`(y_1, y_2, y_3)` directly. The slacks come
+from the same ``s = c - A^T y``, sliced by the table above -- and
+un-flattened, for the PSD block, by the inverse of step 2:
+
+.. code-block:: python
+
+   s = c - At @ y
+
+   s_l = s[0:2]                            # K.l -- nonnegative
+   q1, q2 = s[2:6], s[6:10]                # K.q -- each is (bound, *components)
+   S = s[10:19].reshape(3, 3, order="F")   # K.s -- back to a 3x3 matrix
+
+   q1[0] >= np.linalg.norm(q1[1:])         # the Lorentz condition, per block
+   np.linalg.eigvalsh(S)                   # all >= 0
+
+Here that gives ``s_l = [0, 13.35]``, both Lorentz blocks within their
+norm bounds (the first one tight, ``94.288`` on both sides), and
+``eigvals(S) = [0, 50.16, 165.18]`` -- so the LP block's first row, the
+first cone constraint, and the PSD constraint are all active at the
+optimum.
 
 Solver options (``pars``)
 --------------------------
@@ -110,11 +408,11 @@ each collection's own official optimal-value table:
    .venv/bin/python -m pytest tests/test_benchmarks.py -v          # everything, ~101 problems (~10 min)
    .venv/bin/python -m pytest tests/test_benchmarks.py -v -m mini  # fastest subset only (~35s)
 
-Measured comparison against real Octave/MEX SeDuMi
-----------------------------------------------------
+Measured comparison against original Octave/MEX SeDuMi
+--------------------------------------------------------
 
 The table below is a **timing and optimal-value comparison of this port
-against a from-source build of the real Octave/MEX SeDuMi**
+against a from-source build of the original Octave/MEX SeDuMi**
 (``vendor/sedumi-upstream``, built via ``install_sedumi -rebuild``),
 solving all 105 problems ``tests/test_benchmarks.py`` covers (both
 solvable and infeasible SDPLIB/DIMACS/TORUS instances), measured
@@ -130,7 +428,8 @@ install in between) to remove that skew; treat the ratio column as
 indicative, not a tight bound. See :doc:`contributing` (DEVLOG's Phase 5
 entry) for an earlier, 5-problem version of this same comparison.
 
-**Timing, by problem size** (bucketed by the real Octave/MEX solve time):
+**Timing, by problem size** (bucketed by the original Octave/MEX solve
+time):
 
 .. list-table::
    :header-rows: 1
@@ -161,7 +460,7 @@ entry) for an earlier, 5-problem version of this same comparison.
      - **800.9 s**
      - **1.02**
 
-Under matched conditions, this port and real Octave/MEX SeDuMi run
+Under matched conditions, this port and original Octave/MEX SeDuMi run
 **within a few percent of each other in aggregate** -- close enough that
 the remaining gap is within this environment's own run-to-run noise, not
 a clear, reproducible slowdown in either direction. Individual problems
@@ -170,7 +469,7 @@ SOCP problems (``nb``, ``nb_L2``, ``nql30old``, ...) consistently show
 this port running 2-3x slower, plausibly Python interpreter/NumPy-
 allocation/ctypes-crossing overhead dominating on problems this small,
 while several others (``qssp30``, ``hinf13``, ``truss6``, ...) run faster
-than real Octave/MEX -- see the ``ratio_py_over_oct`` column.
+than the original Octave/MEX -- see the ``ratio_py_over_oct`` column.
 
 **Optimal value (pobj) agreement.** Both solvers' final primal objective
 values, formatted in scientific notation to the same number of
@@ -191,7 +490,7 @@ bugs:
   for the ``hinf*`` family is only given to 2-3 significant figures, and
   ``tests/test_benchmarks.py``'s tolerance for this family is widened by
   hand accordingly (see that file's ``SDPLIB_PARAMS``).
-- ``qssp30old`` (``reldiff`` ~1.4e-2): the real Octave/MEX build itself
+- ``qssp30old`` (``reldiff`` ~1.4e-2): the original Octave/MEX build itself
   returns ``numerr=2`` on this instance (a genuine solver limitation, not
   something this port introduced) -- see :doc:`contributing`'s DEVLOG
   reference on ``nb_L2``/``nql30old``/``qssp30old`` for the full story.

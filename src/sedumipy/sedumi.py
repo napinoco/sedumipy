@@ -113,11 +113,18 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
     pars = checkpars(pars)
     fid = pars["fid"]
 
-    # ---- Print welcome -- sedumi.m lines ~312-316 ----
+    # ---- Print welcome -- sedumi.m lines ~312-316. Deliberately omits
+    # upstream's "by AdvOL ... and Jos F. Sturm ..." credit line: this is
+    # sedumipy's own unofficial port, and printing the original authors'
+    # names here could misleadingly suggest their involvement in it (see
+    # README.md's "A note on citation and attribution"). Also notes
+    # fid=0 for quiet mode, since original SeDuMi's welcome banner never
+    # had to explain this (pars.fid is documented only in the .m file's
+    # help text, never printed).
     _fprintf(
         fid,
-        "sedumipy %s -- unofficial Python port of SeDuMi %s "
-        "(by AdvOL, 2005-2008 and Jos F. Sturm, 1998-2003).\n",
+        "sedumipy %s -- unofficial Python port of SeDuMi %s. "
+        "Set fid=0 to silence this output.\n",
         __version__,
         _UPSTREAM_VERSION,
     )

@@ -8,6 +8,25 @@ status and history behind these entries, and
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-09-06
+
+### Added
+
+- `sedumi()` now prints original SeDuMi's console progress output:
+  `sedumi.py` gained an `_fprintf()` helper wired in at every point
+  `sedumi.m` calls `my_fprintf(pars.fid, ...)` -- the welcome banner,
+  alg/theta/beta, the preprocessing summary, pre-loop eqs/nnz stats,
+  the per-iteration progress table, "Run into numerical problems"/
+  "Maximum number of iterations reached", the final result summary
+  (both the feasible and infeasible paths), detailed timing, and
+  max-norms/Cholesky stats. `pars["fid"]` keeps its upstream default of
+  `1` (stdout); `fid=0` stays silent, and any file-like object with
+  `.write()` is also accepted. Purely diagnostic -- confirmed not to
+  affect the returned `(x, y, info)` (`tests/test_sedumi_console.py`).
+  The welcome banner no longer echoes the original authors' credit line
+  from `sedumi.m` (see README's "A note on citation and attribution");
+  it now points at `fid=0` for quiet mode instead.
+
 ## [0.0.2] - 2026-09-05
 
 ### Added

@@ -253,11 +253,12 @@ The following are not "gaps we didn't notice" but constraints
 **deliberately rejected with `NotImplementedError`**, each documented
 with its reasoning in the relevant module's docstring.
 
-- **Console output, the v-plot, `pars.stopat`'s debug break, the
-  pre-solve rank diagnostic, and the DIMACS error metrics
-  (`info.err`)** are not ported. All of these are purely
-  diagnostic/display and have no effect on the returned `(x, y, info)`
-  values, so they were deprioritized.
+- **The v-plot, `pars.stopat`'s debug break, the pre-solve rank
+  diagnostic, and the DIMACS error metrics (`info.err`)** are not
+  ported. All of these are purely diagnostic/display and have no
+  effect on the returned `(x, y, info)` values, so they were
+  deprioritized. (Console output itself -- `my_fprintf`/`pars.fid` --
+  IS ported; see `sedumi.py`'s `_fprintf()`.)
 
 ## 6. Running the tests (and regenerating oracle fixtures)
 

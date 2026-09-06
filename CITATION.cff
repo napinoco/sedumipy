@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+title: sedumipy
+message: "If you use this software in your research, please cite it as below."
+
+authors:
+  - family-names: Ito
+    given-names: Naoki
+    affiliation: "napinoco"
+
+license: GPL-2.0-only
+
+repository-code: "https://github.com/napinoco/sedumipy"
+repository: "https://github.com/napinoco/sedumipy"
+url: "https://napinoco.github.io/sedumipy/"
+
+version: 0.0.3
+date-released: 2026-09-06
+
+doi: 10.5281/zenodo.22541942
+
+type: software
+
+keywords:
+  - conic programming
+  - semidefinite programming
+  - second-order cone programming
+  - linear programming
+  - interior-point method
+  - optimization
+  - sedumi
+
+references:
+  - type: article
+    authors:
+      - family-names: Sturm
+        given-names: "J.F."
+    title: "Using SeDuMi 1.02, a MATLAB toolbox for optimization over symmetric cones"
+    journal: "Optimization Methods and Software"
+    volume: 11
+    number: "1-4"
+    pages: "625–653"
+    year: 1999
+    doi: 10.1080/10556789908805769

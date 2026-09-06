@@ -253,15 +253,18 @@ The following are not "gaps we didn't notice" but constraints
 **deliberately rejected with `NotImplementedError`**, each documented
 with its reasoning in the relevant module's docstring.
 
-- **Rotated second-order cones (`K.r`)** are converted to standard
-  second-order cones (`K.q`) at the `pretransfo.py` stage, so no code
-  downstream needs to be aware of them (`sedumi.py`'s verification
-  tests include one rotated-cone case).
-- **Console output, the v-plot, `pars.stopat`'s debug break, the
-  pre-solve rank diagnostic, and the DIMACS error metrics
-  (`info.err`)** are not ported. All of these are purely
-  diagnostic/display and have no effect on the returned `(x, y, info)`
-  values, so they were deprioritized.
+- **The v-plot, `pars.stopat`'s debug break, the pre-solve rank
+  diagnostic, and the DIMACS error metrics (`info.err`)** are not
+  ported. All of these are purely diagnostic/display and have no
+  effect on the returned `(x, y, info)` values, so they were
+  deprioritized. (Console output itself -- `my_fprintf`/`pars.fid` --
+  IS ported; see `sedumi.py`'s `_fprintf()`. `pars["fid"]` defaults to
+  1, matching upstream; set `fid=0` for silence. The welcome banner
+  deliberately omits upstream's "by AdvOL, 2005-2008 and Jos F.
+  Sturm, 1998-2003" credit line, since printing it here could
+  misleadingly suggest the original authors' involvement in this
+  unofficial port -- see README.md's "A note on citation and
+  attribution".)
 
 ## 6. Running the tests (and regenerating oracle fixtures)
 

@@ -22,14 +22,28 @@ diagnostics below -- all of which reuse this same permanently-zeroed
 and `symbcholden()` builds the `symLden` structure `deninfac()` needs
 alongside `symbchol()`'s ordinary `Lsym`.
 
-Also not ported (cosmetic/diagnostic, no effect on the returned
-(x,y,info)): the console progress printout (my_fprintf/pars.fid),
-pars.vplot's v-plot, pars.stopat's interactive debug break, the
-optional pre-solve rank/infeasibility diagnostic (a warning heuristic),
-and the origcoeff DIMACS error-measures block (info.err).
+Console progress printout (my_fprintf/pars.fid) IS ported -- see
+`_fprintf()` below and its call sites throughout this function, a
+line-by-line match of sedumi.m's own my_fprintf() calls (welcome
+banner, alg/theta/beta, preprocessing summary, per-iteration table,
+final summary, detailed timing, max-norms/Cholesky stats). `pars["fid"]`
+defaults to 1 (stdout), matching pars.fid's own MATLAB default; set
+`fid=0` for silence, matching upstream's "SeDuMi runs quietly" mode, or
+pass any file-like object with a .write() method (MATLAB's fopen()
+handle equivalent).
+
+Still not ported (cosmetic/diagnostic, no effect on the returned
+(x,y,info)): pars.vplot's v-plot, pars.stopat's interactive debug
+break, the optional pre-solve rank/infeasibility diagnostic (a warning
+heuristic), and the origcoeff DIMACS error-measures block (info.err).
 """
 
 from __future__ import annotations
+
+import sys
+import time
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 import numpy as np
 import scipy.sparse as sp
@@ -54,6 +68,28 @@ from .symbcholden import symbcholden
 from .updtransfo import updtransfo
 from .wregion import wregion
 
+_UPSTREAM_VERSION = "1.3.7"  # sedumi_version.m
+try:
+    __version__ = _pkg_version("sedumipy")
+except PackageNotFoundError:  # not installed (e.g. run from a raw checkout)
+    __version__ = "0.0.0+unknown"
+
+
+def _fprintf(fid, fmt: str, *args) -> None:
+    """Port of my_fprintf.m: writes `fmt % args` to `fid` unless `fid` is
+    falsy (pars.fid=0 means "SeDuMi runs quietly", my_fprintf.m's own
+    `if fid: fprintf(fid, ...)` gate). fid=1 (the default) writes to
+    stdout, matching MATLAB's fid=1; any other truthy value is treated
+    as a file-like object with a .write() method, matching a MATLAB
+    fopen()-returned fid passed through to fprintf."""
+    if not fid:
+        return
+    text = (fmt % args) if args else fmt
+    if fid == 1:
+        sys.stdout.write(text)
+    else:
+        fid.write(text)
+
 
 def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
     """x, y, info = sedumi(A, b, c, K, pars=None, **pars_kwargs)
@@ -63,6 +99,8 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
     `pars` dict by hand; entries in `pars_kwargs` win over the same key
     in `pars` when both are given. See checkpars.py for the full list of
     recognized `pars` fields and their defaults."""
+    walltime0 = time.time()
+    cputime0 = time.process_time()
     if pars_kwargs:
         pars = {**(pars or {}), **pars_kwargs}
     A2, b2, c2, K2, prep, _origcoeff = pretransfo(A, b, c, K, pars or {})
@@ -73,6 +111,50 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
 
     lponly = int(K2["l"]) == len(c2)
     pars = checkpars(pars)
+    fid = pars["fid"]
+
+    # ---- Print welcome -- sedumi.m lines ~312-316. Deliberately omits
+    # upstream's "by AdvOL ... and Jos F. Sturm ..." credit line: this is
+    # sedumipy's own unofficial port, and printing the original authors'
+    # names here could misleadingly suggest their involvement in it (see
+    # README.md's "A note on citation and attribution"). Also notes
+    # fid=0 for quiet mode, since original SeDuMi's welcome banner never
+    # had to explain this (pars.fid is documented only in the .m file's
+    # help text, never printed).
+    _fprintf(
+        fid,
+        "sedumipy %s -- unofficial Python port of SeDuMi %s. "
+        "Set fid=0 to silence this output.\n",
+        __version__,
+        _UPSTREAM_VERSION,
+    )
+    # ---- Print statistics of cone-problem -- sedumi.m lines ~317-335 ----
+    if pars["alg"] == 0:
+        _fprintf(fid, "Alg = 0: No corrector, ")
+    elif pars["alg"] == 1:
+        _fprintf(fid, "Alg = 1: v-corrector, ")
+    elif pars["alg"] == 2:
+        _fprintf(fid, "Alg = 2: xz-corrector, ")
+    if pars["stepdif"] == 1:
+        _fprintf(fid, "Step-Differentiation, ")
+    elif pars["stepdif"] == 2:
+        _fprintf(fid, "Adaptive Step-Differentiation, ")
+    _fprintf(fid, "theta = %5.3f, beta = %5.3f\n", pars["theta"], pars["beta"])
+    # ---- Print preprocessing information -- sedumi.m lines ~336-352.
+    # (freeblock1/freeQ are never actually set by pretransfo.m itself --
+    # confirmed dead branches upstream too -- so only sdiag/freeL, the
+    # two fields prep.py actually populates, are reproduced here.)
+    if pars.get("prep", 1) == 1:
+        if "sdiag" in prep:
+            sdiag = prep["sdiag"]
+            _fprintf(
+                fid,
+                "Detected %i diagonal SDP block(s) with %i linear variables\n",
+                len(sdiag),
+                int(np.sum(sdiag)),
+            )
+        if "freeL" in prep:
+            _fprintf(fid, "Split %i free variables\n", prep["freeL"])
 
     # ---- Remove dense columns (if any) -- sedumi.m lines ~352-364. This
     # zeroing of A2 happens exactly once, here, and the same A2 is reused
@@ -93,6 +175,7 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
     if has_psd:
         is_dense = False  # getada_psd() ignores DAt["q"]'s representation
         Ablkjc, Aord, ADA = build_aord(A2, K2, dense)
+        ada_symbolic_nnz = ADA.nnz  # matches upstream's pre-loop nnz(ADA_sedumi_)
         Lsym = symbchol(ADA)
         symLden = symbcholden(Lsym, dense, {"denq": DAtdenq})
         d, v, vfrm, y, y0, R = sdinit(A2, b2, c2, dense, K2, pars)
@@ -158,6 +241,7 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
         DAtdenq = DAt["denq"]
 
         ADA, _absd0 = getada(A2, K2, d, DAt)
+        ada_symbolic_nnz = ADA_symbolic.nnz  # matches upstream's pre-loop nnz(ADA_sedumi_)
         Lsym = symbchol(ADA_symbolic)
         symLden = symbcholden(Lsym, dense, DAt)
 
@@ -166,14 +250,44 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
 
     merit = (float(np.sum(R["w"])) + max(R["sd"], 0.0)) ** 2 * y0 / R["b0"]
 
+    # ---- Pre-loop diagnostics -- sedumi.m lines ~396-407 ----
+    _fprintf(
+        fid,
+        "eqs m = %g, order n = %g, dim = %g, blocks = %g\n",
+        b2.size,
+        n,
+        c2.size,
+        1 + len(K2.get("q", [])) + len(K2.get("s", [])),
+    )
+    _fprintf(
+        fid,
+        "nnz(A) = %d + %d, nnz(ADA) = %d, nnz(L) = %d\n",
+        A2.nnz,
+        dense["A"].nnz,
+        ada_symbolic_nnz,
+        Lsym["L"].nnz,
+    )
+    if dense["cols"].size:
+        _fprintf(
+            fid,
+            "Handling %d + %d dense columns.\n",
+            dense["cols"].size,
+            len(dense.get("q", [])),
+        )
+    _fprintf(fid, " it :     b*y       gap    delta  rate   t/tP*  t/tD*   feas cg cg  prec\n")
+    _fprintf(fid, "  0 :            %8.2E %5.3f\n", merit, 0)
+
     STOP = 0
     iter_ = 0
     wr = {"delta": 0.0, "desc": 1}
     feasratio = 0.0
     xsol = ysol = None
     Lnum = None
+    fact = None
     Lsd = {"kcg": 0}
     err = {"kcg": 0}
+    walltime1 = time.time()
+    cputime1 = time.process_time()
 
     while STOP == 0:
         iter_ += 1
@@ -231,6 +345,7 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
             STOP = -1
             iter_ -= 1
             y0 = y0Old
+            _fprintf(fid, "Run into numerical problems.\n")
             break
 
         feasratio = float(dxmdz[0] / v[0])
@@ -240,6 +355,14 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
         d, vfrm = updtransfo(xscl, zscl, w, d, K2)
         v = frameit(vfrm["lab"], vfrm["q"], vfrm["s"], K2)
         x0 = float(np.sqrt(d["l"][0]) * v[0])
+
+        # ---- SHOW ITERATION STATISTICS -- sedumi.m lines ~516-520 ----
+        _fprintf(
+            fid,
+            " %2.0f : %10.2E %8.2E %5.3f %6.4f %6.4f %6.4f %6.2f %2d %2d  ",
+            iter_, by / x0, merit, wr["delta"], rate,
+            relt["p"], relt["d"], feasratio, err["kcg"], Lsd["kcg"],
+        )
 
         if lponly and rate < 0.05:
             xsol_try, ysol_try = optstep(
@@ -260,6 +383,7 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
         rgap = max(cx - by, 0.0) / max(abs(cx), abs(by), 1e-3 * x0)
         precision1 = y0 * r0 / (1 + x0)
         precision2 = (y0 * r0 + rgap) / x0
+        _fprintf(fid, "%1.1E\n", max(precision1, precision2))
         if precision1 < pars["eps"]:
             if precision2 < pars["eps"]:
                 STOP = 1
@@ -272,7 +396,12 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
                 break
 
         if iter_ >= pars["maxiter"]:
+            _fprintf(fid, "Maximum number of iterations reached.\n")
             STOP = -1
+
+    _fprintf(fid, "\n")
+    walltime2 = time.time()
+    cputime2 = time.process_time()
 
     # ************************************************************
     # FINAL TASKS
@@ -329,10 +458,17 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
         else:
             r0 = (cx - by) / (abs(by) + 1e-5 * (x0 + abscx))
 
+        # ---- sedumi.m lines ~664-673 ----
+        sigdig = np.inf if r0 == 0 else -np.log10(r0)
+        _fprintf(fid, "iter seconds digits       c*x               b*y\n")
+        _fprintf(fid, "%3d %8.1f %5.1f %- 17.10e %- 17.10e\n", iter_, cputime2 - cputime1, sigdig, cx, by)
+        _fprintf(fid, "|Ax-b| = %9.1e, [Ay-c]_+ = %9.1E, |x|=%9.1e, |y|=%9.1e\n", pinf, dinf, normx, normy)
+
         denom = np.array([1.0, 1 + R["maxb"] + 1e-3 * R["maxRb"], 1 + R["maxc"] + 1e-3 * R["maxRc"]])
         info["r0"] = float(np.max(np.array([r0, pinf, dinf]) / denom))
         if STOP == -1:
             if info["r0"] > pars["bigeps"]:
+                _fprintf(fid, "No sensible solution found.\n")
                 info["numerr"] = 2
             elif info["r0"] > pars["eps"]:
                 info["numerr"] = 1
@@ -348,13 +484,18 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
             pinf = pinf / abscx
             normx = normx / abscx
             x = x / abscx
+            _fprintf(fid, "Dual infeasible, primal improving direction found.\n")
         if dinf < pars["bigeps"] * by:
             info["r0"] = abs(dinf / by)
             info["pinf"] = 1
             dinf = dinf / by
             normy = normy / by
             y = y / by
+            _fprintf(fid, "Primal infeasible, dual improving direction found.\n")
+        _fprintf(fid, "iter seconds  |Ax|    [Ay]_+     |x|       |y|\n")
+        _fprintf(fid, "%3d %8.1f %9.1e %9.1e %9.1e %9.1e\n", iter_, cputime2 - cputime1, pinf, dinf, normx, normy)
         if info["pinf"] + info["dinf"] == 0:
+            _fprintf(fid, "Failed: no sensible solution/direction found.\n")
             info["numerr"] = 2
         elif STOP == -1:
             if pinf > -pars["eps"] * cx and dinf > pars["eps"] * by:
@@ -363,5 +504,27 @@ def sedumi(A, b, c, K: dict, pars: dict | None = None, **pars_kwargs):
                 info["numerr"] = 0
 
     x, y, _K_out = posttransfo(x, y, prep, K2)
+
+    # ---- Detailed timing + max-norms/Cholesky stats -- sedumi.m lines
+    # ~737-768. Matches upstream's post-posttransfo placement (after
+    # `[x,y,K] = posttransfo(...)`); the Cholesky stats come from
+    # `fact` (`_native.numeric_cholesky()`'s return dict), which
+    # still holds the last main-loop iteration's factorization here,
+    # exactly like original sedumi.m's un-cleared `L.add`/`L.skip`/`L.L`
+    # at this point in the function (`clear L` there only runs after
+    # these stats are computed).
+    walltime3 = time.time()
+    timing = (walltime1 - walltime0, walltime2 - walltime1, walltime3 - walltime2)
+    _fprintf(fid, "\nDetailed timing (sec)\n")
+    _fprintf(fid, "   Pre          IPM          Post\n")
+    _fprintf(fid, "%1.3E    %1.3E    %1.3E    ", *timing)
+    _fprintf(fid, "\n")
+
+    _fprintf(fid, "Max-norms: ||b||=%d, ||c|| = %d,\n", R["maxb"], R["maxc"])
+    if Lnum is not None and fact is not None:
+        nnz_ladd = int(fact["diagadd_index"].size)
+        nnz_lskip = int(fact["skip"].size)
+        norm_ll = float(np.max(np.abs(fact["L"].data))) if fact["L"].nnz else 0.0
+        _fprintf(fid, "Cholesky |add|=%d, |skip| = %d, ||L.L|| = %g.\n", nnz_ladd, nnz_lskip, norm_ll)
 
     return x, y, info

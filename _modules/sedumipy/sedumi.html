@@ -281,14 +281,28 @@
 <span class="sd">and `symbcholden()` builds the `symLden` structure `deninfac()` needs</span>
 <span class="sd">alongside `symbchol()`'s ordinary `Lsym`.</span>
 
-<span class="sd">Also not ported (cosmetic/diagnostic, no effect on the returned</span>
-<span class="sd">(x,y,info)): the console progress printout (my_fprintf/pars.fid),</span>
-<span class="sd">pars.vplot's v-plot, pars.stopat's interactive debug break, the</span>
-<span class="sd">optional pre-solve rank/infeasibility diagnostic (a warning heuristic),</span>
-<span class="sd">and the origcoeff DIMACS error-measures block (info.err).</span>
+<span class="sd">Console progress printout (my_fprintf/pars.fid) IS ported -- see</span>
+<span class="sd">`_fprintf()` below and its call sites throughout this function, a</span>
+<span class="sd">line-by-line match of sedumi.m's own my_fprintf() calls (welcome</span>
+<span class="sd">banner, alg/theta/beta, preprocessing summary, per-iteration table,</span>
+<span class="sd">final summary, detailed timing, max-norms/Cholesky stats). `pars["fid"]`</span>
+<span class="sd">defaults to 1 (stdout), matching pars.fid's own MATLAB default; set</span>
+<span class="sd">`fid=0` for silence, matching upstream's "SeDuMi runs quietly" mode, or</span>
+<span class="sd">pass any file-like object with a .write() method (MATLAB's fopen()</span>
+<span class="sd">handle equivalent).</span>
+
+<span class="sd">Still not ported (cosmetic/diagnostic, no effect on the returned</span>
+<span class="sd">(x,y,info)): pars.vplot's v-plot, pars.stopat's interactive debug</span>
+<span class="sd">break, the optional pre-solve rank/infeasibility diagnostic (a warning</span>
+<span class="sd">heuristic), and the origcoeff DIMACS error-measures block (info.err).</span>
 <span class="sd">"""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">importlib.metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">PackageNotFoundError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">importlib.metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">version</span> <span class="k">as</span> <span class="n">_pkg_version</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">scipy.sparse</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sp</span>
@@ -313,6 +327,28 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.updtransfo</span><span class="w"> </span><span class="kn">import</span> <span class="n">updtransfo</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.wregion</span><span class="w"> </span><span class="kn">import</span> <span class="n">wregion</span>
 
+<span class="n">_UPSTREAM_VERSION</span> <span class="o">=</span> <span class="s2">"1.3.7"</span>  <span class="c1"># sedumi_version.m</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">__version__</span> <span class="o">=</span> <span class="n">_pkg_version</span><span class="p">(</span><span class="s2">"sedumipy"</span><span class="p">)</span>
+<span class="k">except</span> <span class="n">PackageNotFoundError</span><span class="p">:</span>  <span class="c1"># not installed (e.g. run from a raw checkout)</span>
+    <span class="n">__version__</span> <span class="o">=</span> <span class="s2">"0.0.0+unknown"</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="n">fmt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Port of my_fprintf.m: writes `fmt % args` to `fid` unless `fid` is</span>
+<span class="sd">    falsy (pars.fid=0 means "SeDuMi runs quietly", my_fprintf.m's own</span>
+<span class="sd">    `if fid: fprintf(fid, ...)` gate). fid=1 (the default) writes to</span>
+<span class="sd">    stdout, matching MATLAB's fid=1; any other truthy value is treated</span>
+<span class="sd">    as a file-like object with a .write() method, matching a MATLAB</span>
+<span class="sd">    fopen()-returned fid passed through to fprintf."""</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">fid</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="p">(</span><span class="n">fmt</span> <span class="o">%</span> <span class="n">args</span><span class="p">)</span> <span class="k">if</span> <span class="n">args</span> <span class="k">else</span> <span class="n">fmt</span>
+    <span class="k">if</span> <span class="n">fid</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">fid</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+
 
 <div class="viewcode-block" id="sedumi">
 <a class="viewcode-back" href="../../api.html#sedumipy.sedumi">[docs]</a>
@@ -324,6 +360,8 @@
 <span class="sd">    `pars` dict by hand; entries in `pars_kwargs` win over the same key</span>
 <span class="sd">    in `pars` when both are given. See checkpars.py for the full list of</span>
 <span class="sd">    recognized `pars` fields and their defaults."""</span>
+    <span class="n">walltime0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">cputime0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">process_time</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">pars_kwargs</span><span class="p">:</span>
         <span class="n">pars</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="p">(</span><span class="n">pars</span> <span class="ow">or</span> <span class="p">{}),</span> <span class="o">**</span><span class="n">pars_kwargs</span><span class="p">}</span>
     <span class="n">A2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">c2</span><span class="p">,</span> <span class="n">K2</span><span class="p">,</span> <span class="n">prep</span><span class="p">,</span> <span class="n">_origcoeff</span> <span class="o">=</span> <span class="n">pretransfo</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">pars</span> <span class="ow">or</span> <span class="p">{})</span>
@@ -334,6 +372,50 @@
 
     <span class="n">lponly</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">K2</span><span class="p">[</span><span class="s2">"l"</span><span class="p">])</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">c2</span><span class="p">)</span>
     <span class="n">pars</span> <span class="o">=</span> <span class="n">checkpars</span><span class="p">(</span><span class="n">pars</span><span class="p">)</span>
+    <span class="n">fid</span> <span class="o">=</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"fid"</span><span class="p">]</span>
+
+    <span class="c1"># ---- Print welcome -- sedumi.m lines ~312-316. Deliberately omits</span>
+    <span class="c1"># upstream's "by AdvOL ... and Jos F. Sturm ..." credit line: this is</span>
+    <span class="c1"># sedumipy's own unofficial port, and printing the original authors'</span>
+    <span class="c1"># names here could misleadingly suggest their involvement in it (see</span>
+    <span class="c1"># README.md's "A note on citation and attribution"). Also notes</span>
+    <span class="c1"># fid=0 for quiet mode, since original SeDuMi's welcome banner never</span>
+    <span class="c1"># had to explain this (pars.fid is documented only in the .m file's</span>
+    <span class="c1"># help text, never printed).</span>
+    <span class="n">_fprintf</span><span class="p">(</span>
+        <span class="n">fid</span><span class="p">,</span>
+        <span class="s2">"sedumipy </span><span class="si">%s</span><span class="s2"> -- unofficial Python port of SeDuMi </span><span class="si">%s</span><span class="s2">. "</span>
+        <span class="s2">"Set fid=0 to silence this output.</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span>
+        <span class="n">__version__</span><span class="p">,</span>
+        <span class="n">_UPSTREAM_VERSION</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="c1"># ---- Print statistics of cone-problem -- sedumi.m lines ~317-335 ----</span>
+    <span class="k">if</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"alg"</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Alg = 0: No corrector, "</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"alg"</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Alg = 1: v-corrector, "</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"alg"</span><span class="p">]</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Alg = 2: xz-corrector, "</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"stepdif"</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Step-Differentiation, "</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"stepdif"</span><span class="p">]</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Adaptive Step-Differentiation, "</span><span class="p">)</span>
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"theta = </span><span class="si">%5.3f</span><span class="s2">, beta = </span><span class="si">%5.3f</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"theta"</span><span class="p">],</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"beta"</span><span class="p">])</span>
+    <span class="c1"># ---- Print preprocessing information -- sedumi.m lines ~336-352.</span>
+    <span class="c1"># (freeblock1/freeQ are never actually set by pretransfo.m itself --</span>
+    <span class="c1"># confirmed dead branches upstream too -- so only sdiag/freeL, the</span>
+    <span class="c1"># two fields prep.py actually populates, are reproduced here.)</span>
+    <span class="k">if</span> <span class="n">pars</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"prep"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s2">"sdiag"</span> <span class="ow">in</span> <span class="n">prep</span><span class="p">:</span>
+            <span class="n">sdiag</span> <span class="o">=</span> <span class="n">prep</span><span class="p">[</span><span class="s2">"sdiag"</span><span class="p">]</span>
+            <span class="n">_fprintf</span><span class="p">(</span>
+                <span class="n">fid</span><span class="p">,</span>
+                <span class="s2">"Detected </span><span class="si">%i</span><span class="s2"> diagonal SDP block(s) with </span><span class="si">%i</span><span class="s2"> linear variables</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">sdiag</span><span class="p">),</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">sdiag</span><span class="p">)),</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="s2">"freeL"</span> <span class="ow">in</span> <span class="n">prep</span><span class="p">:</span>
+            <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Split </span><span class="si">%i</span><span class="s2"> free variables</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">prep</span><span class="p">[</span><span class="s2">"freeL"</span><span class="p">])</span>
 
     <span class="c1"># ---- Remove dense columns (if any) -- sedumi.m lines ~352-364. This</span>
     <span class="c1"># zeroing of A2 happens exactly once, here, and the same A2 is reused</span>
@@ -354,6 +436,7 @@
     <span class="k">if</span> <span class="n">has_psd</span><span class="p">:</span>
         <span class="n">is_dense</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># getada_psd() ignores DAt["q"]'s representation</span>
         <span class="n">Ablkjc</span><span class="p">,</span> <span class="n">Aord</span><span class="p">,</span> <span class="n">ADA</span> <span class="o">=</span> <span class="n">build_aord</span><span class="p">(</span><span class="n">A2</span><span class="p">,</span> <span class="n">K2</span><span class="p">,</span> <span class="n">dense</span><span class="p">)</span>
+        <span class="n">ada_symbolic_nnz</span> <span class="o">=</span> <span class="n">ADA</span><span class="o">.</span><span class="n">nnz</span>  <span class="c1"># matches upstream's pre-loop nnz(ADA_sedumi_)</span>
         <span class="n">Lsym</span> <span class="o">=</span> <span class="n">symbchol</span><span class="p">(</span><span class="n">ADA</span><span class="p">)</span>
         <span class="n">symLden</span> <span class="o">=</span> <span class="n">symbcholden</span><span class="p">(</span><span class="n">Lsym</span><span class="p">,</span> <span class="n">dense</span><span class="p">,</span> <span class="p">{</span><span class="s2">"denq"</span><span class="p">:</span> <span class="n">DAtdenq</span><span class="p">})</span>
         <span class="n">d</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">vfrm</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">y0</span><span class="p">,</span> <span class="n">R</span> <span class="o">=</span> <span class="n">sdinit</span><span class="p">(</span><span class="n">A2</span><span class="p">,</span> <span class="n">b2</span><span class="p">,</span> <span class="n">c2</span><span class="p">,</span> <span class="n">dense</span><span class="p">,</span> <span class="n">K2</span><span class="p">,</span> <span class="n">pars</span><span class="p">)</span>
@@ -419,6 +502,7 @@
         <span class="n">DAtdenq</span> <span class="o">=</span> <span class="n">DAt</span><span class="p">[</span><span class="s2">"denq"</span><span class="p">]</span>
 
         <span class="n">ADA</span><span class="p">,</span> <span class="n">_absd0</span> <span class="o">=</span> <span class="n">getada</span><span class="p">(</span><span class="n">A2</span><span class="p">,</span> <span class="n">K2</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">DAt</span><span class="p">)</span>
+        <span class="n">ada_symbolic_nnz</span> <span class="o">=</span> <span class="n">ADA_symbolic</span><span class="o">.</span><span class="n">nnz</span>  <span class="c1"># matches upstream's pre-loop nnz(ADA_sedumi_)</span>
         <span class="n">Lsym</span> <span class="o">=</span> <span class="n">symbchol</span><span class="p">(</span><span class="n">ADA_symbolic</span><span class="p">)</span>
         <span class="n">symLden</span> <span class="o">=</span> <span class="n">symbcholden</span><span class="p">(</span><span class="n">Lsym</span><span class="p">,</span> <span class="n">dense</span><span class="p">,</span> <span class="n">DAt</span><span class="p">)</span>
 
@@ -427,14 +511,44 @@
 
     <span class="n">merit</span> <span class="o">=</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">R</span><span class="p">[</span><span class="s2">"w"</span><span class="p">]))</span> <span class="o">+</span> <span class="nb">max</span><span class="p">(</span><span class="n">R</span><span class="p">[</span><span class="s2">"sd"</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">y0</span> <span class="o">/</span> <span class="n">R</span><span class="p">[</span><span class="s2">"b0"</span><span class="p">]</span>
 
+    <span class="c1"># ---- Pre-loop diagnostics -- sedumi.m lines ~396-407 ----</span>
+    <span class="n">_fprintf</span><span class="p">(</span>
+        <span class="n">fid</span><span class="p">,</span>
+        <span class="s2">"eqs m = </span><span class="si">%g</span><span class="s2">, order n = </span><span class="si">%g</span><span class="s2">, dim = </span><span class="si">%g</span><span class="s2">, blocks = </span><span class="si">%g</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span>
+        <span class="n">b2</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+        <span class="n">n</span><span class="p">,</span>
+        <span class="n">c2</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+        <span class="mi">1</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">K2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"q"</span><span class="p">,</span> <span class="p">[]))</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">K2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"s"</span><span class="p">,</span> <span class="p">[])),</span>
+    <span class="p">)</span>
+    <span class="n">_fprintf</span><span class="p">(</span>
+        <span class="n">fid</span><span class="p">,</span>
+        <span class="s2">"nnz(A) = </span><span class="si">%d</span><span class="s2"> + </span><span class="si">%d</span><span class="s2">, nnz(ADA) = </span><span class="si">%d</span><span class="s2">, nnz(L) = </span><span class="si">%d</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span>
+        <span class="n">A2</span><span class="o">.</span><span class="n">nnz</span><span class="p">,</span>
+        <span class="n">dense</span><span class="p">[</span><span class="s2">"A"</span><span class="p">]</span><span class="o">.</span><span class="n">nnz</span><span class="p">,</span>
+        <span class="n">ada_symbolic_nnz</span><span class="p">,</span>
+        <span class="n">Lsym</span><span class="p">[</span><span class="s2">"L"</span><span class="p">]</span><span class="o">.</span><span class="n">nnz</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">dense</span><span class="p">[</span><span class="s2">"cols"</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+        <span class="n">_fprintf</span><span class="p">(</span>
+            <span class="n">fid</span><span class="p">,</span>
+            <span class="s2">"Handling </span><span class="si">%d</span><span class="s2"> + </span><span class="si">%d</span><span class="s2"> dense columns.</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span>
+            <span class="n">dense</span><span class="p">[</span><span class="s2">"cols"</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">dense</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"q"</span><span class="p">,</span> <span class="p">[])),</span>
+        <span class="p">)</span>
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">" it :     b*y       gap    delta  rate   t/tP*  t/tD*   feas cg cg  prec</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"  0 :            </span><span class="si">%8.2E</span><span class="s2"> </span><span class="si">%5.3f</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">merit</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
     <span class="n">STOP</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="n">iter_</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="n">wr</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"delta"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span> <span class="s2">"desc"</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
     <span class="n">feasratio</span> <span class="o">=</span> <span class="mf">0.0</span>
     <span class="n">xsol</span> <span class="o">=</span> <span class="n">ysol</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">Lnum</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">fact</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">Lsd</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"kcg"</span><span class="p">:</span> <span class="mi">0</span><span class="p">}</span>
     <span class="n">err</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"kcg"</span><span class="p">:</span> <span class="mi">0</span><span class="p">}</span>
+    <span class="n">walltime1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">cputime1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">process_time</span><span class="p">()</span>
 
     <span class="k">while</span> <span class="n">STOP</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="n">iter_</span> <span class="o">+=</span> <span class="mi">1</span>
@@ -492,6 +606,7 @@
             <span class="n">STOP</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
             <span class="n">iter_</span> <span class="o">-=</span> <span class="mi">1</span>
             <span class="n">y0</span> <span class="o">=</span> <span class="n">y0Old</span>
+            <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Run into numerical problems.</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
             <span class="k">break</span>
 
         <span class="n">feasratio</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">dxmdz</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
@@ -501,6 +616,14 @@
         <span class="n">d</span><span class="p">,</span> <span class="n">vfrm</span> <span class="o">=</span> <span class="n">updtransfo</span><span class="p">(</span><span class="n">xscl</span><span class="p">,</span> <span class="n">zscl</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">K2</span><span class="p">)</span>
         <span class="n">v</span> <span class="o">=</span> <span class="n">frameit</span><span class="p">(</span><span class="n">vfrm</span><span class="p">[</span><span class="s2">"lab"</span><span class="p">],</span> <span class="n">vfrm</span><span class="p">[</span><span class="s2">"q"</span><span class="p">],</span> <span class="n">vfrm</span><span class="p">[</span><span class="s2">"s"</span><span class="p">],</span> <span class="n">K2</span><span class="p">)</span>
         <span class="n">x0</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">"l"</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span> <span class="o">*</span> <span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+        <span class="c1"># ---- SHOW ITERATION STATISTICS -- sedumi.m lines ~516-520 ----</span>
+        <span class="n">_fprintf</span><span class="p">(</span>
+            <span class="n">fid</span><span class="p">,</span>
+            <span class="s2">" </span><span class="si">%2.0f</span><span class="s2"> : </span><span class="si">%10.2E</span><span class="s2"> </span><span class="si">%8.2E</span><span class="s2"> </span><span class="si">%5.3f</span><span class="s2"> </span><span class="si">%6.4f</span><span class="s2"> </span><span class="si">%6.4f</span><span class="s2"> </span><span class="si">%6.4f</span><span class="s2"> </span><span class="si">%6.2f</span><span class="s2"> </span><span class="si">%2d</span><span class="s2"> </span><span class="si">%2d</span><span class="s2">  "</span><span class="p">,</span>
+            <span class="n">iter_</span><span class="p">,</span> <span class="n">by</span> <span class="o">/</span> <span class="n">x0</span><span class="p">,</span> <span class="n">merit</span><span class="p">,</span> <span class="n">wr</span><span class="p">[</span><span class="s2">"delta"</span><span class="p">],</span> <span class="n">rate</span><span class="p">,</span>
+            <span class="n">relt</span><span class="p">[</span><span class="s2">"p"</span><span class="p">],</span> <span class="n">relt</span><span class="p">[</span><span class="s2">"d"</span><span class="p">],</span> <span class="n">feasratio</span><span class="p">,</span> <span class="n">err</span><span class="p">[</span><span class="s2">"kcg"</span><span class="p">],</span> <span class="n">Lsd</span><span class="p">[</span><span class="s2">"kcg"</span><span class="p">],</span>
+        <span class="p">)</span>
 
         <span class="k">if</span> <span class="n">lponly</span> <span class="ow">and</span> <span class="n">rate</span> <span class="o">&lt;</span> <span class="mf">0.05</span><span class="p">:</span>
             <span class="n">xsol_try</span><span class="p">,</span> <span class="n">ysol_try</span> <span class="o">=</span> <span class="n">optstep</span><span class="p">(</span>
@@ -521,6 +644,7 @@
         <span class="n">rgap</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">cx</span> <span class="o">-</span> <span class="n">by</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">cx</span><span class="p">),</span> <span class="nb">abs</span><span class="p">(</span><span class="n">by</span><span class="p">),</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">x0</span><span class="p">)</span>
         <span class="n">precision1</span> <span class="o">=</span> <span class="n">y0</span> <span class="o">*</span> <span class="n">r0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">x0</span><span class="p">)</span>
         <span class="n">precision2</span> <span class="o">=</span> <span class="p">(</span><span class="n">y0</span> <span class="o">*</span> <span class="n">r0</span> <span class="o">+</span> <span class="n">rgap</span><span class="p">)</span> <span class="o">/</span> <span class="n">x0</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"</span><span class="si">%1.1E</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">precision1</span><span class="p">,</span> <span class="n">precision2</span><span class="p">))</span>
         <span class="k">if</span> <span class="n">precision1</span> <span class="o">&lt;</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"eps"</span><span class="p">]:</span>
             <span class="k">if</span> <span class="n">precision2</span> <span class="o">&lt;</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"eps"</span><span class="p">]:</span>
                 <span class="n">STOP</span> <span class="o">=</span> <span class="mi">1</span>
@@ -533,7 +657,12 @@
                 <span class="k">break</span>
 
         <span class="k">if</span> <span class="n">iter_</span> <span class="o">&gt;=</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"maxiter"</span><span class="p">]:</span>
+            <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Maximum number of iterations reached.</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
             <span class="n">STOP</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">walltime2</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">cputime2</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">process_time</span><span class="p">()</span>
 
     <span class="c1"># ************************************************************</span>
     <span class="c1"># FINAL TASKS</span>
@@ -590,10 +719,17 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">r0</span> <span class="o">=</span> <span class="p">(</span><span class="n">cx</span> <span class="o">-</span> <span class="n">by</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">by</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1e-5</span> <span class="o">*</span> <span class="p">(</span><span class="n">x0</span> <span class="o">+</span> <span class="n">abscx</span><span class="p">))</span>
 
+        <span class="c1"># ---- sedumi.m lines ~664-673 ----</span>
+        <span class="n">sigdig</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span> <span class="k">if</span> <span class="n">r0</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">r0</span><span class="p">)</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"iter seconds digits       c*x               b*y</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"</span><span class="si">%3d</span><span class="s2"> </span><span class="si">%8.1f</span><span class="s2"> </span><span class="si">%5.1f</span><span class="s2"> </span><span class="si">%- 17.10e</span><span class="s2"> </span><span class="si">%- 17.10e</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">iter_</span><span class="p">,</span> <span class="n">cputime2</span> <span class="o">-</span> <span class="n">cputime1</span><span class="p">,</span> <span class="n">sigdig</span><span class="p">,</span> <span class="n">cx</span><span class="p">,</span> <span class="n">by</span><span class="p">)</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"|Ax-b| = </span><span class="si">%9.1e</span><span class="s2">, [Ay-c]_+ = </span><span class="si">%9.1E</span><span class="s2">, |x|=</span><span class="si">%9.1e</span><span class="s2">, |y|=</span><span class="si">%9.1e</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">pinf</span><span class="p">,</span> <span class="n">dinf</span><span class="p">,</span> <span class="n">normx</span><span class="p">,</span> <span class="n">normy</span><span class="p">)</span>
+
         <span class="n">denom</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">R</span><span class="p">[</span><span class="s2">"maxb"</span><span class="p">]</span> <span class="o">+</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">R</span><span class="p">[</span><span class="s2">"maxRb"</span><span class="p">],</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">R</span><span class="p">[</span><span class="s2">"maxc"</span><span class="p">]</span> <span class="o">+</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">R</span><span class="p">[</span><span class="s2">"maxRc"</span><span class="p">]])</span>
         <span class="n">info</span><span class="p">[</span><span class="s2">"r0"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">r0</span><span class="p">,</span> <span class="n">pinf</span><span class="p">,</span> <span class="n">dinf</span><span class="p">])</span> <span class="o">/</span> <span class="n">denom</span><span class="p">))</span>
         <span class="k">if</span> <span class="n">STOP</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">info</span><span class="p">[</span><span class="s2">"r0"</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"bigeps"</span><span class="p">]:</span>
+                <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"No sensible solution found.</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
                 <span class="n">info</span><span class="p">[</span><span class="s2">"numerr"</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span>
             <span class="k">elif</span> <span class="n">info</span><span class="p">[</span><span class="s2">"r0"</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"eps"</span><span class="p">]:</span>
                 <span class="n">info</span><span class="p">[</span><span class="s2">"numerr"</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
@@ -609,13 +745,18 @@
             <span class="n">pinf</span> <span class="o">=</span> <span class="n">pinf</span> <span class="o">/</span> <span class="n">abscx</span>
             <span class="n">normx</span> <span class="o">=</span> <span class="n">normx</span> <span class="o">/</span> <span class="n">abscx</span>
             <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">/</span> <span class="n">abscx</span>
+            <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Dual infeasible, primal improving direction found.</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">dinf</span> <span class="o">&lt;</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"bigeps"</span><span class="p">]</span> <span class="o">*</span> <span class="n">by</span><span class="p">:</span>
             <span class="n">info</span><span class="p">[</span><span class="s2">"r0"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">dinf</span> <span class="o">/</span> <span class="n">by</span><span class="p">)</span>
             <span class="n">info</span><span class="p">[</span><span class="s2">"pinf"</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
             <span class="n">dinf</span> <span class="o">=</span> <span class="n">dinf</span> <span class="o">/</span> <span class="n">by</span>
             <span class="n">normy</span> <span class="o">=</span> <span class="n">normy</span> <span class="o">/</span> <span class="n">by</span>
             <span class="n">y</span> <span class="o">=</span> <span class="n">y</span> <span class="o">/</span> <span class="n">by</span>
+            <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Primal infeasible, dual improving direction found.</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"iter seconds  |Ax|    [Ay]_+     |x|       |y|</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"</span><span class="si">%3d</span><span class="s2"> </span><span class="si">%8.1f</span><span class="s2"> </span><span class="si">%9.1e</span><span class="s2"> </span><span class="si">%9.1e</span><span class="s2"> </span><span class="si">%9.1e</span><span class="s2"> </span><span class="si">%9.1e</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">iter_</span><span class="p">,</span> <span class="n">cputime2</span> <span class="o">-</span> <span class="n">cputime1</span><span class="p">,</span> <span class="n">pinf</span><span class="p">,</span> <span class="n">dinf</span><span class="p">,</span> <span class="n">normx</span><span class="p">,</span> <span class="n">normy</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">info</span><span class="p">[</span><span class="s2">"pinf"</span><span class="p">]</span> <span class="o">+</span> <span class="n">info</span><span class="p">[</span><span class="s2">"dinf"</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Failed: no sensible solution/direction found.</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
             <span class="n">info</span><span class="p">[</span><span class="s2">"numerr"</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span>
         <span class="k">elif</span> <span class="n">STOP</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">pinf</span> <span class="o">&gt;</span> <span class="o">-</span><span class="n">pars</span><span class="p">[</span><span class="s2">"eps"</span><span class="p">]</span> <span class="o">*</span> <span class="n">cx</span> <span class="ow">and</span> <span class="n">dinf</span> <span class="o">&gt;</span> <span class="n">pars</span><span class="p">[</span><span class="s2">"eps"</span><span class="p">]</span> <span class="o">*</span> <span class="n">by</span><span class="p">:</span>
@@ -624,6 +765,28 @@
                 <span class="n">info</span><span class="p">[</span><span class="s2">"numerr"</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
 
     <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">_K_out</span> <span class="o">=</span> <span class="n">posttransfo</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">prep</span><span class="p">,</span> <span class="n">K2</span><span class="p">)</span>
+
+    <span class="c1"># ---- Detailed timing + max-norms/Cholesky stats -- sedumi.m lines</span>
+    <span class="c1"># ~737-768. Matches upstream's post-posttransfo placement (after</span>
+    <span class="c1"># `[x,y,K] = posttransfo(...)`); the Cholesky stats come from</span>
+    <span class="c1"># `fact` (`_native.numeric_cholesky()`'s return dict), which</span>
+    <span class="c1"># still holds the last main-loop iteration's factorization here,</span>
+    <span class="c1"># exactly like original sedumi.m's un-cleared `L.add`/`L.skip`/`L.L`</span>
+    <span class="c1"># at this point in the function (`clear L` there only runs after</span>
+    <span class="c1"># these stats are computed).</span>
+    <span class="n">walltime3</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">timing</span> <span class="o">=</span> <span class="p">(</span><span class="n">walltime1</span> <span class="o">-</span> <span class="n">walltime0</span><span class="p">,</span> <span class="n">walltime2</span> <span class="o">-</span> <span class="n">walltime1</span><span class="p">,</span> <span class="n">walltime3</span> <span class="o">-</span> <span class="n">walltime2</span><span class="p">)</span>
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">Detailed timing (sec)</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"   Pre          IPM          Post</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"</span><span class="si">%1.3E</span><span class="s2">    </span><span class="si">%1.3E</span><span class="s2">    </span><span class="si">%1.3E</span><span class="s2">    "</span><span class="p">,</span> <span class="o">*</span><span class="n">timing</span><span class="p">)</span>
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Max-norms: ||b||=</span><span class="si">%d</span><span class="s2">, ||c|| = </span><span class="si">%d</span><span class="s2">,</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">R</span><span class="p">[</span><span class="s2">"maxb"</span><span class="p">],</span> <span class="n">R</span><span class="p">[</span><span class="s2">"maxc"</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">Lnum</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">fact</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">nnz_ladd</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">fact</span><span class="p">[</span><span class="s2">"diagadd_index"</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="n">nnz_lskip</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">fact</span><span class="p">[</span><span class="s2">"skip"</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="n">norm_ll</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">fact</span><span class="p">[</span><span class="s2">"L"</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="p">)))</span> <span class="k">if</span> <span class="n">fact</span><span class="p">[</span><span class="s2">"L"</span><span class="p">]</span><span class="o">.</span><span class="n">nnz</span> <span class="k">else</span> <span class="mf">0.0</span>
+        <span class="n">_fprintf</span><span class="p">(</span><span class="n">fid</span><span class="p">,</span> <span class="s2">"Cholesky |add|=</span><span class="si">%d</span><span class="s2">, |skip| = </span><span class="si">%d</span><span class="s2">, ||L.L|| = </span><span class="si">%g</span><span class="s2">.</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">nnz_ladd</span><span class="p">,</span> <span class="n">nnz_lskip</span><span class="p">,</span> <span class="n">norm_ll</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">info</span></div>
 

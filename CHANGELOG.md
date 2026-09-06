@@ -8,6 +8,11 @@ status and history behind these entries, and
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-09-06
+
+Re-release of 0.0.3, whose PyPI upload failed because
+`pyproject.toml`'s `version` was not bumped for it. No code changes.
+
 ## [0.0.3] - 2026-09-06
 
 ### Added

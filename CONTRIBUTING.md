@@ -253,10 +253,6 @@ The following are not "gaps we didn't notice" but constraints
 **deliberately rejected with `NotImplementedError`**, each documented
 with its reasoning in the relevant module's docstring.
 
-- **Rotated second-order cones (`K.r`)** are converted to standard
-  second-order cones (`K.q`) at the `pretransfo.py` stage, so no code
-  downstream needs to be aware of them (`sedumi.py`'s verification
-  tests include one rotated-cone case).
 - **Console output, the v-plot, `pars.stopat`'s debug break, the
   pre-solve rank diagnostic, and the DIMACS error metrics
   (`info.err`)** are not ported. All of these are purely

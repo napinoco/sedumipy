@@ -3,8 +3,9 @@
 `sedumipy` is published to [PyPI](https://pypi.org/project/sedumipy/) by
 [`.github/workflows/wheels.yml`](.github/workflows/wheels.yml), which
 already builds the artifacts a release consists of: CPython 3.10-3.13
-wheels for Linux x86_64 (manylinux), Windows x64 and macOS (Apple
-silicon), plus a source distribution for every platform without one.
+wheels for Linux x86_64 and aarch64 (manylinux), Windows x64 and macOS
+(Apple silicon and Intel), plus a source distribution for every
+platform without one.
 
 Publishing uses PyPI's **Trusted Publishing** (OIDC). No API token is
 stored in this repository, in a secret or anywhere else: the upload

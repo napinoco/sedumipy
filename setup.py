@@ -45,9 +45,9 @@ MinGW64 toolchain -- and no `bash` was found on PATH.
 
 You are most likely seeing this because pip fell back to the source
 distribution: prebuilt wheels are published for 64-bit x86 Windows,
-Linux (x86_64) and macOS (Apple silicon) on CPython 3.10-3.13, so any
-other target -- 32-bit or ARM Windows, Alpine/musl, Linux aarch64,
-Intel macOS -- is compiled here instead.
+Linux (x86_64 and aarch64) and macOS (Apple silicon and Intel) on
+CPython 3.10-3.13, so any other target -- 32-bit or ARM Windows,
+Alpine/musl -- is compiled here instead.
 
 To build it, install MSYS2 from https://www.msys2.org/ and run this in
 an MSYS2 MinGW64 shell:

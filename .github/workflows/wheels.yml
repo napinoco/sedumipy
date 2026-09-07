@@ -48,7 +48,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # Each label is a native runner for its architecture -- cibuildwheel
+        # autodetects the arch to build from the runner itself, so no
+        # separate CIBW_ARCHS/QEMU cross-build config is needed for any of
+        # these. ubuntu-24.04-arm and macos-15-intel cover Linux aarch64 and
+        # Intel macOS respectively (see pyproject.toml's
+        # manylinux-aarch64-image and CHANGELOG.md for why those were
+        # missing before); macos-13, the previous Intel label, was retired
+        # by GitHub in December 2025.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

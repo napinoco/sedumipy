@@ -8,6 +8,22 @@ status and history behind these entries, and
 
 ## [Unreleased]
 
+### Added
+
+- Wheels now also cover Linux `aarch64` and Intel macOS, via GitHub's
+  native `ubuntu-24.04-arm` and `macos-15-intel` hosted runners
+  (`.github/workflows/wheels.yml`) -- no cross-compilation involved,
+  cibuildwheel just autodetects the runner's own architecture. Linux
+  aarch64 links scipy-openblas64 the same way x86_64 already did (it
+  ships wheels for that platform too); Intel macOS needs no changes at
+  all, since it already linked the system Accelerate framework the
+  same way Apple silicon does. `macos-13`, the previous Intel label,
+  was not an option: GitHub retired it in December 2025.
+- Still no wheels for 32-bit/ARM Windows or Alpine/musl: win32 has no
+  scipy-openblas64 build to link, and win_arm64/musllinux would need
+  their own untested toolchain/libc stories this project has not
+  verified.
+
 ## [0.0.4] - 2026-09-06
 
 Re-release of 0.0.3, whose PyPI upload failed because

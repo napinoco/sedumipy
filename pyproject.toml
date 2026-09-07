@@ -127,13 +127,19 @@ test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.se
 # own [project.dependencies], not built here) fell back to building
 # scipy from source -- which then failed for the unrelated reason that
 # this bare container has no BLAS for *scipy's* own build. manylinux_2_28
-# has current numpy/scipy wheels available, sidestepping that.
+# has current numpy/scipy wheels available, sidestepping that. Same
+# reasoning for aarch64 below, which runs on wheels.yml's
+# ubuntu-24.04-arm job.
 manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
 # auditwheel vendors libscipy_openblas64_.so (a shared library the
 # global before-build's pip install placed under this venv's own
 # site-packages, found via the rpath tools/build_libsedumi.sh links
 # with) into the wheel the same way it already vendored -lopenblas
 # before this switch -- no extra config needed here for that part.
+# scipy-openblas64 ships wheels for manylinux aarch64 same as x86_64,
+# so before-build's install below already covers it with no extra
+# per-arch branching.
 
 [tool.cibuildwheel.macos]
 # Overrides the global before-build to skip installing scipy-openblas64:

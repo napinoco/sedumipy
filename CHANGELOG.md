@@ -8,6 +8,8 @@ status and history behind these entries, and
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-09-08
+
 ### Added
 
 - Wheels now also cover Linux `aarch64` and Intel macOS, via GitHub's

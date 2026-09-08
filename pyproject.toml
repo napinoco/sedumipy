@@ -115,7 +115,39 @@ include = ["sedumipy*"]
 # installing anything on macOS).
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"
-skip = "*-musllinux_* *_i686 *-win32 *-win_arm64"
+# win_arm64 removed from this list: wheels.yml's build-windows-arm64 job
+# (windows-11-arm, GA for public repos since August 2025) now builds it,
+# using MSYS2's CLANGARM64 environment -- see that job's own comments
+# and tools/build_libsedumi.sh's MINGW*/MSYS* case for the toolchain
+# story. scipy-openblas64 ships a win_arm64 wheel same as win_amd64, so
+# before-build below needs no per-arch branching either.
+#
+# cp310-win_arm64 stays skipped, though: numpy/scipy (this project's
+# own runtime deps, needed by test-command below) publish win_arm64
+# wheels for cp311+ only, not cp310. Confirmed in CI -- with it
+# unskipped, cibuildwheel's test-command step tried to compile numpy
+# from source instead of finding a wheel, and that build itself failed
+# (an unrelated numpy/meson vs. this clang toolchain incompatibility:
+# `cc: error: unsupported option '-mlong-double-64' for target
+# aarch64-w64-windows-gnu`) -- not something this project can fix from
+# here.
+#
+# musllinux (Alpine/musl libc) also removed from this list: verified
+# scipy-openblas64, numpy and scipy all ship musllinux_1_2 wheels for
+# every cp310-cp313 x x86_64/aarch64 combination this project builds
+# (no cp310-style gap like win_arm64's), and cibuildwheel 2.21 already
+# defaults musllinux to musllinux_1_2 -- current enough that, unlike
+# manylinux2014 below, no musllinux-*-image override is needed. The
+# `build` job's existing ubuntu-latest/ubuntu-24.04-arm matrix entries
+# need no wheels.yml changes either: cibuildwheel builds both the
+# manylinux and musllinux variant of each identifier from the same
+# Linux runner by default, so removing the skip is the only wiring
+# musllinux needs on top of what aarch64 already added there.
+# build_libsedumi.sh's Linux case has nothing glibc-specific either --
+# plain C, and it always links scipy-openblas64 in a wheel build (the
+# system-BLAS link-test fallback only matters for an offline/no-network
+# local build, same as on manylinux).
+skip = "*_i686 *-win32 cp310-win_arm64"
 build-frontend = { name = "pip", args = ["--no-build-isolation"] }
 before-build = "pip install setuptools scipy-openblas64==0.3.34.106.0"
 test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0\""
@@ -127,13 +159,19 @@ test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.se
 # own [project.dependencies], not built here) fell back to building
 # scipy from source -- which then failed for the unrelated reason that
 # this bare container has no BLAS for *scipy's* own build. manylinux_2_28
-# has current numpy/scipy wheels available, sidestepping that.
+# has current numpy/scipy wheels available, sidestepping that. Same
+# reasoning for aarch64 below, which runs on wheels.yml's
+# ubuntu-24.04-arm job.
 manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
 # auditwheel vendors libscipy_openblas64_.so (a shared library the
 # global before-build's pip install placed under this venv's own
 # site-packages, found via the rpath tools/build_libsedumi.sh links
 # with) into the wheel the same way it already vendored -lopenblas
 # before this switch -- no extra config needed here for that part.
+# scipy-openblas64 ships wheels for manylinux aarch64 same as x86_64,
+# so before-build's install below already covers it with no extra
+# per-arch branching.
 
 [tool.cibuildwheel.macos]
 # Overrides the global before-build to skip installing scipy-openblas64:
@@ -157,16 +195,18 @@ build-frontend = "default"
 # -- Accelerate is a system framework, not a bundled shared library.
 
 [tool.cibuildwheel.windows]
-# .github/workflows/wheels.yml's Windows job installs MSYS2 (bash, gcc)
-# and puts it on PATH before cibuildwheel runs, so setup.py's `bash
-# tools/build_libsedumi.sh` step (see setup.py's own Windows note) can
-# find them -- still needed for the compiler even though scipy-openblas64
-# now supplies the BLAS (MSVC can't build this, see setup.py's
-# WINDOWS_BUILD_HELP). `delvewheel repair` bundles libscipy_openblas64_.dll
-# and the mingw runtime DLLs into the wheel, none of which are on a plain
-# end user's machine -- the same role auditwheel plays on Linux (macOS
-# needs no such vendoring, see [tool.cibuildwheel.macos] above), just
-# not one of cibuildwheel's own built-in defaults for Windows.
+# .github/workflows/wheels.yml's Windows jobs (build-windows for x64,
+# build-windows-arm64 for arm64) install MSYS2 (bash, a gcc-compatible
+# compiler) and put it on PATH before cibuildwheel runs, so setup.py's
+# `bash tools/build_libsedumi.sh` step (see setup.py's own Windows note)
+# can find them -- still needed for the compiler even though
+# scipy-openblas64 now supplies the BLAS (MSVC can't build this, see
+# setup.py's WINDOWS_BUILD_HELP). `delvewheel repair` bundles
+# libscipy_openblas64_.dll and the mingw/clang runtime DLLs into the
+# wheel, none of which are on a plain end user's machine -- the same
+# role auditwheel plays on Linux (macOS needs no such vendoring, see
+# [tool.cibuildwheel.macos] above), just not one of cibuildwheel's own
+# built-in defaults for Windows.
 # tools/repair_windows_wheel.py exists only because the
 # scipy-openblas64 DLL's directory (a site-packages path inside this
 # venv) has to be resolved in Python at repair time, not hardcoded here.

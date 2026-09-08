@@ -20,20 +20,29 @@ resolved at repair time, in Python, rather than hardcoded in TOML.
 
 import subprocess
 import sys
+from pathlib import Path
 
 
 def main() -> None:
     wheel, dest_dir = sys.argv[1], sys.argv[2]
 
+    # See wheels.yml's "Verify MSYS2 gcc/openblas, then copy it out of
+    # C:\msys64" step (build-windows job) and its ARM64 counterpart
+    # (build-windows-arm64, using MSYS2's CLANGARM64 environment instead
+    # of MINGW64) -- the build itself resolves its compiler from
+    # whichever of these two copies matches the job's architecture via
+    # MSYS2_ROOT, so the runtime DLLs delvewheel needs to bundle live
+    # there too, not in the original MSYS2 install. Only one of the two
+    # ever exists on a given runner, so check rather than assume which.
     add_paths = [
-        # See .github/workflows/wheels.yml's "Verify MSYS2 gcc/openblas,
-        # then copy it out of C:\\msys64" step -- the build itself
-        # resolves gcc from this copy via MSYS2_ROOT, so the mingw
-        # runtime DLLs delvewheel needs to bundle live here too, not in
-        # the original MSYS2 install.
-        r"C:\toolchain-mingw64\mingw64\bin",
-        r"C:\msys64\usr\bin",
+        candidate
+        for candidate in (
+            r"C:\toolchain-mingw64\mingw64\bin",
+            r"C:\toolchain-clangarm64\clangarm64\bin",
+        )
+        if Path(candidate).is_dir()
     ]
+    add_paths.append(r"C:\msys64\usr\bin")
 
     try:
         import scipy_openblas64 as sob

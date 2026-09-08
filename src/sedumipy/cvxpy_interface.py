@@ -170,8 +170,10 @@ class SEDUMIPY(ConicSolver):
         (`eps`, `maxiter`, `bigeps`, ... -- see checkpars.py for the
         full list). `warm_start` and `verbose` are both ignored: SeDuMi
         is an interior-point method with no warm-start interface, and
-        this port does not implement sedumi.m's console progress
-        printout (see sedumi.py's own docstring).
+        `verbose` isn't wired to sedumi()'s own `fid` console-output
+        option -- which defaults to printing SeDuMi's progress table to
+        stdout regardless of `verbose`; pass `fid=0` via `solver_opts`
+        to silence it (see sedumi.py's own docstring).
         """
         from sedumipy import sedumi
 

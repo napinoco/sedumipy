@@ -33,7 +33,7 @@ MATLAB/Octave-free C library + Python package. As of this writing:
        PyPI
      - Done
 
-**Scope.** LP, second-order cone (SOCP, ``K.q``/``K.r``), and
+**Scope.** LP (``K.l``), second-order cone (SOCP, ``K.q``/``K.r``), and
 semidefinite (SDP, ``K.s``) problems are fully ported and verified
 against original Octave/SeDuMi output on both synthetic fixtures
 and published SDPLIB/DIMACS benchmark problems (:doc:`usage`'s
@@ -53,11 +53,11 @@ OpenBLAS, see below -- on Linux; OpenBLAS on Windows; Accelerate on
 macOS).
 
 **Not ported** (deliberately out of scope, no effect on the returned
-``(x, y, info)``): the console progress printout, ``pars.vplot``'s
-v-plot, ``pars.stopat``'s interactive debug break, the optional pre-solve
-rank/infeasibility diagnostic, and the DIMACS error-measures block
-(``info.err``). Complex Hermitian PSD problems (``K.scomplex``/
-``K.ycomplex``) are also out of scope.
+``(x, y, info)``): ``pars.vplot``'s v-plot, ``pars.stopat``'s interactive
+debug break, the optional pre-solve rank/infeasibility diagnostic, and
+the DIMACS error-measures block (``info.err``). Complex Hermitian PSD
+problems (``K.scomplex``/``K.ycomplex``) are also out of scope. (Console
+progress output itself *is* ported -- see :doc:`usage`'s ``fid`` option.)
 
 **Packaging.** A wheel with ``libsedumi.so`` bundled builds and installs
 correctly (verified in an isolated virtualenv with no access to the

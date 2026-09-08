@@ -41,23 +41,25 @@ from pathlib import Path
 # list in step with pyproject.toml's [tool.cibuildwheel] build/skip.
 WINDOWS_BUILD_HELP = """\
 sedumipy is being built from source, which on Windows needs an MSYS2
-MinGW64 toolchain -- and no `bash` was found on PATH.
+MinGW64 (or, on ARM64, CLANGARM64) toolchain -- and no `bash` was found
+on PATH.
 
 You are most likely seeing this because pip fell back to the source
-distribution: prebuilt wheels are published for 64-bit x86 Windows,
-Linux (x86_64 and aarch64) and macOS (Apple silicon and Intel) on
-CPython 3.10-3.13, so any other target -- 32-bit or ARM Windows,
+distribution: prebuilt wheels are published for Windows (x64 and
+ARM64), Linux (x86_64 and aarch64) and macOS (Apple silicon and Intel)
+on CPython 3.10-3.13, so any other target -- 32-bit Windows,
 Alpine/musl -- is compiled here instead.
 
 To build it, install MSYS2 from https://www.msys2.org/ and run this in
-an MSYS2 MinGW64 shell:
+an MSYS2 MinGW64 shell (x64) or CLANGARM64 shell (ARM64):
 
-    pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas
+    pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openblas            # x64
+    pacman -S mingw-w64-clang-aarch64-gcc-compat mingw-w64-clang-aarch64-openblas  # ARM64
 
-then add both C:\\msys64\\usr\\bin and C:\\msys64\\mingw64\\bin to PATH
-and reinstall. MSVC will not work in its place: libsedumi.dll is a
-plain ctypes-loaded DLL rather than a CPython extension, and the build
-is a bash script.
+then add both C:\\msys64\\usr\\bin and C:\\msys64\\mingw64\\bin (x64) or
+C:\\msys64\\clangarm64\\bin (ARM64) to PATH and reinstall. MSVC will not
+work in its place: libsedumi.dll is a plain ctypes-loaded DLL rather
+than a CPython extension, and the build is a bash script.
 
 Full instructions:
 https://github.com/napinoco/sedumipy/blob/main/docs/installation.rst\

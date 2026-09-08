@@ -104,11 +104,11 @@ pip install sedumipy
 ```
 
 Wheels cover CPython 3.10-3.13 on Linux x86_64 and aarch64 (manylinux),
-Windows x64, and macOS (Apple silicon and Intel), with the compiled
-kernel library and its BLAS already inside them — no compiler, no BLAS
-install, no MATLAB or Octave. Anything else falls back to the source
-distribution and compiles locally, which does need a toolchain: see
-[`docs/installation.rst`](docs/installation.rst).
+Windows x64 and ARM64, and macOS (Apple silicon and Intel), with the
+compiled kernel library and its BLAS already inside them — no compiler,
+no BLAS install, no MATLAB or Octave. Anything else falls back to the
+source distribution and compiles locally, which does need a toolchain:
+see [`docs/installation.rst`](docs/installation.rst).
 
 ## Documentation
 

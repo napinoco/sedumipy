@@ -169,11 +169,26 @@ case "$kernel" in
     # Rather than guess a fourth time, try every plausible form and, if
     # every single one fails, dump enough diagnostics to actually see
     # what's on disk instead of failing silently.
+    #
+    # ARM64 Windows (wheels.yml's build-windows-arm64 job) uses MSYS2's
+    # CLANGARM64 environment instead of MINGW64 -- there is no ARM64
+    # build of MSYS2's own gcc, only a clang-based cross toolchain, so
+    # that job installs mingw-w64-clang-aarch64-gcc-compat instead of
+    # mingw-w64-x86_64-gcc. gcc-compat ships a `gcc.exe` wrapper around
+    # clang that accepts the same GNU-style flags this script already
+    # passes below, so the only thing that actually differs here is
+    # which MSYS2 subdirectory the compiler lives under -- detected via
+    # `uname -m` rather than hardcoded, same reasoning as the kernel
+    # detection above.
+    case "$(uname -m)" in
+      aarch64|arm64) mingw_subdir=clangarm64 ;;
+      *) mingw_subdir=mingw64 ;;
+    esac
     msys_root="${MSYS2_ROOT:-C:/msys64}"
     gcc_candidates=(
-      "$msys_root/mingw64/bin/gcc.exe"
-      "/mingw64/bin/gcc.exe"
-      "$(cygpath -u "$msys_root" 2>/dev/null || true)/mingw64/bin/gcc.exe"
+      "$msys_root/$mingw_subdir/bin/gcc.exe"
+      "/$mingw_subdir/bin/gcc.exe"
+      "$(cygpath -u "$msys_root" 2>/dev/null || true)/$mingw_subdir/bin/gcc.exe"
     )
     gcc_bin=""
     for candidate in "${gcc_candidates[@]}"; do
@@ -266,7 +281,15 @@ case "$kernel" in
     # PE/COFF has no ELF-style .dynsym for `nm -D` to read; this is an
     # approximate count of defined text symbols instead, diagnostic only.
     # `$gcc_bin_dir` was resolved above, next to the gcc that built $out.
-    "$gcc_bin_dir/nm.exe" "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions (approx.)"
+    # Guarded with `-x` checks (unlike the Darwin/ELF branches, which
+    # pipe straight into `2>/dev/null`): unlike a real MSYS2 MINGW64
+    # install, mingw-w64-clang-aarch64-gcc-compat's own nm.exe/objdump.exe
+    # presence isn't something this script has verified, and `set -e`
+    # would otherwise abort the whole build over a purely diagnostic step
+    # that failed to even find its binary.
+    if [ -x "$gcc_bin_dir/nm.exe" ]; then
+      "$gcc_bin_dir/nm.exe" "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions (approx.)"
+    fi
     # $out's actual DLL import table -- libopenblas.dll and the mingw
     # runtime DLLs should appear here, since -lopenblas links against
     # MSYS2's libopenblas.dll.a *import* library (the package ships no
@@ -277,7 +300,9 @@ case "$kernel" in
     # rather than assumed. Note `pip` swallows this script's output
     # unless the build fails, so it's visible on a direct invocation
     # (see CONTRIBUTING.md's Windows note), not in a pip install log.
-    "$gcc_bin_dir/objdump.exe" -p "$out" 2>/dev/null | grep -i "DLL Name" || true
+    if [ -x "$gcc_bin_dir/objdump.exe" ]; then
+      "$gcc_bin_dir/objdump.exe" -p "$out" 2>/dev/null | grep -i "DLL Name" || true
+    fi
     ;;
   *)
     nm -D "$out" 2>/dev/null | grep -c ' T ' | xargs -I{} echo "  {} exported functions"

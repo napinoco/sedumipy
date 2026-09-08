@@ -19,10 +19,22 @@ status and history behind these entries, and
   all, since it already linked the system Accelerate framework the
   same way Apple silicon does. `macos-13`, the previous Intel label,
   was not an option: GitHub retired it in December 2025.
-- Still no wheels for 32-bit/ARM Windows or Alpine/musl: win32 has no
-  scipy-openblas64 build to link, and win_arm64/musllinux would need
-  their own untested toolchain/libc stories this project has not
-  verified.
+- Wheels now also cover Windows ARM64, via a new `build-windows-arm64`
+  job on the `windows-11-arm` hosted runner (GA for public repos since
+  August 2025). MSYS2 ships no ARM64 build of its own gcc, only the
+  CLANGARM64 environment's clang-based cross toolchain, so this job
+  installs `mingw-w64-clang-aarch64-gcc-compat` instead of
+  `mingw-w64-x86_64-gcc` -- a compatibility layer providing a `gcc.exe`
+  wrapper around clang that accepts the same GNU-style flags
+  `tools/build_libsedumi.sh` already passed for x64, which now picks
+  the right MSYS2 subdirectory (`mingw64` vs `clangarm64`) via `uname
+  -m` instead of hardcoding it. `tools/repair_windows_wheel.py` picks
+  whichever toolchain directory actually exists rather than assuming
+  x64. scipy-openblas64 ships a win_arm64 wheel same as win_amd64, so
+  no BLAS-side changes were needed.
+- Still no wheels for 32-bit Windows or Alpine/musl: win32 has no
+  scipy-openblas64 build to link, and musllinux would need its own
+  untested libc story this project has not verified.
 
 ## [0.0.4] - 2026-09-06
 

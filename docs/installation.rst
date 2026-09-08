@@ -13,8 +13,8 @@ compiled kernel library and the BLAS it needs are already inside it, so
 no compiler and no BLAS install are required.
 
 Wheels are published for CPython 3.10-3.13 on Linux x86_64 and
-``aarch64`` (manylinux), Windows x64, and macOS (Apple silicon and
-Intel). Linux and Windows carry
+``aarch64`` (manylinux), Windows x64 and ARM64, and macOS (Apple
+silicon and Intel). Linux and Windows carry
 `scipy-openblas64 <https://pypi.org/project/scipy-openblas64/>`_ (a
 prebuilt, ILP64 OpenBLAS build) as their BLAS, vendored into the wheel
 at build time (``auditwheel``/``delvewheel`` -- see `Requirements`_
@@ -22,10 +22,10 @@ below for what building it yourself needs); macOS needs no vendoring at
 all, since it links the system Accelerate framework instead, on both
 architectures.
 
-Anything else -- 32-bit or ARM Windows, Alpine/musl -- has no wheel, so
-``pip`` falls back to the source distribution and compiles on your
-machine, which needs the toolchain in `Requirements`_ below. On Windows
-that means MSYS2 specifically, which is a real obstacle rather than a
+Anything else -- 32-bit Windows, Alpine/musl -- has no wheel, so ``pip``
+falls back to the source distribution and compiles on your machine,
+which needs the toolchain in `Requirements`_ below. On Windows that
+means MSYS2 specifically, which is a real obstacle rather than a
 formality.
 
 Requirements
@@ -40,14 +40,22 @@ because ``pip`` fell back to the source distribution as described above.
 
   * **Linux**: ``gcc`` (e.g. ``apt install build-essential``).
   * **macOS**: nothing extra -- Xcode's command line tools provide ``cc``.
-  * **Windows**: `MSYS2 <https://www.msys2.org/>`_ with the MINGW64
-    ``mingw-w64-x86_64-gcc`` package installed (``pacman -S
+  * **Windows (x64)**: `MSYS2 <https://www.msys2.org/>`_ with the
+    MINGW64 ``mingw-w64-x86_64-gcc`` package installed (``pacman -S
     mingw-w64-x86_64-gcc``), with ``C:\msys64\mingw64\bin`` and
     ``C:\msys64\usr\bin`` on ``PATH``. Not MSVC -- ``libsedumi.dll`` is
     a plain ctypes-loaded DLL, not a CPython extension, so it doesn't
     need to match whatever compiler built Python itself. This path is
     exercised in CI (see :doc:`status`) but has not been hand-verified
     on a real Windows machine.
+  * **Windows (ARM64)**: MSYS2's CLANGARM64 environment instead, with
+    the ``mingw-w64-clang-aarch64-gcc-compat`` package (``pacman -S
+    mingw-w64-clang-aarch64-gcc-compat`` from a ``clangarm64.exe``
+    shell) -- MSYS2 ships no ARM64 build of its own gcc, only this
+    clang-based cross toolchain with a gcc-compatible wrapper, which
+    ``tools/build_libsedumi.sh`` detects via ``uname -m`` and drives
+    with the same GNU-style flags as the x64 build. ``C:\msys64\
+    clangarm64\bin`` and ``C:\msys64\usr\bin`` need to be on ``PATH``.
 
 * A BLAS:
 
@@ -76,7 +84,9 @@ because ``pip`` fell back to the source distribution as described above.
     libopenblas-dev``; either OpenBLAS or the reference Netlib BLAS
     works, OpenBLAS preferred when both are present since it runs the
     kernels this library calls roughly 3x faster). **Windows**: also
-    install ``mingw-w64-x86_64-openblas`` alongside the compiler above.
+    install ``mingw-w64-x86_64-openblas`` (x64) or
+    ``mingw-w64-clang-aarch64-openblas`` (ARM64) alongside the compiler
+    above.
 
   See ``tools/build_libsedumi.sh`` for exactly how the choice between
   scipy-openblas64 and the system-BLAS fallback is made on Linux/Windows.

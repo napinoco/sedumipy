@@ -115,7 +115,13 @@ include = ["sedumipy*"]
 # installing anything on macOS).
 [tool.cibuildwheel]
 build = "cp310-* cp311-* cp312-* cp313-*"
-skip = "*-musllinux_* *_i686 *-win32 *-win_arm64"
+# win_arm64 removed from this list: wheels.yml's build-windows-arm64 job
+# (windows-11-arm, GA for public repos since August 2025) now builds it,
+# using MSYS2's CLANGARM64 environment -- see that job's own comments
+# and tools/build_libsedumi.sh's MINGW*/MSYS* case for the toolchain
+# story. scipy-openblas64 ships a win_arm64 wheel same as win_amd64, so
+# before-build below needs no per-arch branching either.
+skip = "*-musllinux_* *_i686 *-win32"
 build-frontend = { name = "pip", args = ["--no-build-isolation"] }
 before-build = "pip install setuptools scipy-openblas64==0.3.34.106.0"
 test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0\""
@@ -163,16 +169,18 @@ build-frontend = "default"
 # -- Accelerate is a system framework, not a bundled shared library.
 
 [tool.cibuildwheel.windows]
-# .github/workflows/wheels.yml's Windows job installs MSYS2 (bash, gcc)
-# and puts it on PATH before cibuildwheel runs, so setup.py's `bash
-# tools/build_libsedumi.sh` step (see setup.py's own Windows note) can
-# find them -- still needed for the compiler even though scipy-openblas64
-# now supplies the BLAS (MSVC can't build this, see setup.py's
-# WINDOWS_BUILD_HELP). `delvewheel repair` bundles libscipy_openblas64_.dll
-# and the mingw runtime DLLs into the wheel, none of which are on a plain
-# end user's machine -- the same role auditwheel plays on Linux (macOS
-# needs no such vendoring, see [tool.cibuildwheel.macos] above), just
-# not one of cibuildwheel's own built-in defaults for Windows.
+# .github/workflows/wheels.yml's Windows jobs (build-windows for x64,
+# build-windows-arm64 for arm64) install MSYS2 (bash, a gcc-compatible
+# compiler) and put it on PATH before cibuildwheel runs, so setup.py's
+# `bash tools/build_libsedumi.sh` step (see setup.py's own Windows note)
+# can find them -- still needed for the compiler even though
+# scipy-openblas64 now supplies the BLAS (MSVC can't build this, see
+# setup.py's WINDOWS_BUILD_HELP). `delvewheel repair` bundles
+# libscipy_openblas64_.dll and the mingw/clang runtime DLLs into the
+# wheel, none of which are on a plain end user's machine -- the same
+# role auditwheel plays on Linux (macOS needs no such vendoring, see
+# [tool.cibuildwheel.macos] above), just not one of cibuildwheel's own
+# built-in defaults for Windows.
 # tools/repair_windows_wheel.py exists only because the
 # scipy-openblas64 DLL's directory (a site-packages path inside this
 # venv) has to be resolved in Python at repair time, not hardcoded here.

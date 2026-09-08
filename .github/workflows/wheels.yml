@@ -4,9 +4,11 @@ name: wheels
 # pyproject.toml's [tool.cibuildwheel] for the actual build/test config.
 # Linux runs manylinux containers (real Docker), macOS runs on a real
 # Mac, and Windows runs on a real Windows box with MSYS2 installed below
-# -- all three provided by GitHub Actions. This is the actual
-# verification CONTRIBUTING.md's Phase 6 note flagged as not yet done in
-# earlier development (no Docker/macOS/Windows available there).
+# -- all three provided by GitHub Actions, on both x86_64 and (since the
+# build-windows-arm64/ubuntu-24.04-arm/macos-15-intel additions) arm64
+# hardware. This is the actual verification CONTRIBUTING.md's Phase 6
+# note flagged as not yet done in earlier development (no Docker/macOS/
+# Windows available there).
 
 on:
   push:
@@ -149,6 +151,70 @@ jobs:
           name: wheels-windows-latest
           path: wheelhouse/*.whl
 
+  build-windows-arm64:
+    # windows-11-arm is a native ARM64 runner (GA for public repos since
+    # August 2025) -- no cross-compilation involved, same as build's
+    # ubuntu-24.04-arm/macos-15-intel additions.
+    #
+    # MSYS2 ships no ARM64 build of its own gcc, only the CLANGARM64
+    # environment's clang-based cross toolchain -- so this job installs
+    # mingw-w64-clang-aarch64-gcc-compat instead of mingw-w64-x86_64-gcc:
+    # a compatibility layer that provides a `gcc.exe` wrapper around
+    # clang, accepting the same GNU-style flags build_libsedumi.sh
+    # already passes for the x64 build (confirmed as the pattern real
+    # projects use for MSYS2 CLANGARM64 CI, e.g. vkQuake's
+    # build-msys2-clangarm64.yml). Everything below otherwise mirrors
+    # build-windows step-for-step; see its own comments for why each step
+    # exists (Defender exclusions, copying the toolchain out of
+    # C:\msys64, MSYS2_ROOT, PATH).
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Disable Windows Defender scanning of C:\msys64
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Set-MpPreference -DisableBehaviorMonitoring $true
+          Set-MpPreference -DisableBlockAtFirstSeen $true
+          Set-MpPreference -DisableIOAVProtection $true
+          Set-MpPreference -DisableScriptScanning $true
+          Set-MpPreference -PUAProtection Disabled
+          Add-MpPreference -ExclusionPath 'C:\msys64'
+          Add-MpPreference -ExclusionPath 'C:\toolchain-clangarm64'
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANGARM64
+          update: true
+          install: mingw-w64-clang-aarch64-gcc-compat
+      - name: Verify MSYS2 gcc-compat, then copy it out of C:\msys64
+        shell: msys2 {0}
+        run: |
+          if [ ! -x /clangarm64/bin/gcc.exe ]; then
+            echo "gcc.exe missing after setup-msys2's install -- forcing a real reinstall"
+            pacman -Rns --noconfirm mingw-w64-clang-aarch64-gcc-compat 2>&1 || true
+            pacman -S --noconfirm --needed --overwrite '*' mingw-w64-clang-aarch64-gcc-compat
+          fi
+          ls -la /clangarm64/bin/gcc.exe
+          /clangarm64/bin/gcc.exe --version
+          mkdir -p /c/toolchain-clangarm64
+          cp -r /clangarm64 /c/toolchain-clangarm64/clangarm64
+          ls -la /c/toolchain-clangarm64/clangarm64/bin/gcc.exe
+          /c/toolchain-clangarm64/clangarm64/bin/gcc.exe --version
+          echo "MSYS2_ROOT=C:/toolchain-clangarm64" >> "$GITHUB_ENV"
+      - name: Put MSYS2 on PATH
+        shell: bash
+        run: |
+          echo "C:\toolchain-clangarm64\clangarm64\bin" >> "$GITHUB_PATH"
+          echo "C:\msys64\usr\bin" >> "$GITHUB_PATH"
+      - uses: pypa/cibuildwheel@v2.21
+      - name: Show what each repaired wheel bundles
+        shell: bash
+        run: bash tools/show_wheel_libs.sh wheelhouse/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-arm64
+          path: wheelhouse/*.whl
+
   sdist:
     runs-on: ubuntu-latest
     steps:
@@ -183,7 +249,7 @@ jobs:
 
   publish-to-release:
     if: github.event_name == 'release'
-    needs: [build, build-windows, sdist]
+    needs: [build, build-windows, build-windows-arm64, sdist]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -211,7 +277,7 @@ jobs:
     # Manual only, and only when the run was started with publish=testpypi
     # -- an ordinary push must never spend a version number.
     if: github.event_name == 'workflow_dispatch' && inputs.publish == 'testpypi'
-    needs: [build, build-windows, sdist]
+    needs: [build, build-windows, build-windows-arm64, sdist]
     runs-on: ubuntu-latest
     environment:
       name: testpypi
@@ -236,7 +302,7 @@ jobs:
     # GitHub release, so the tag, the release notes and the files on
     # PyPI are one action rather than three that can drift apart.
     if: github.event_name == 'release'
-    needs: [build, build-windows, sdist]
+    needs: [build, build-windows, build-windows-arm64, sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi

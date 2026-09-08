@@ -177,19 +177,27 @@ case "$kernel" in
     # mingw-w64-x86_64-gcc. gcc-compat ships a `gcc.exe` wrapper around
     # clang that accepts the same GNU-style flags this script already
     # passes below, so the only thing that actually differs here is
-    # which MSYS2 subdirectory the compiler lives under -- detected via
-    # `uname -m` rather than hardcoded, same reasoning as the kernel
-    # detection above.
-    case "$(uname -m)" in
-      aarch64|arm64) mingw_subdir=clangarm64 ;;
-      *) mingw_subdir=mingw64 ;;
-    esac
+    # which MSYS2 subdirectory the compiler lives under.
+    #
+    # Deliberately NOT switched on `uname -m`: confirmed in real CI on
+    # windows-11-arm that it reports the *bash process's own*
+    # architecture, not the host's -- this script is invoked via
+    # `C:\Program Files\Git\bin\bash.EXE` (Git for Windows' bundled
+    # bash, picked up by shutil.which in setup.py, not the MSYS2 one),
+    # which runs under emulation there and reports x86_64 regardless of
+    # the ARM64 host underneath it. Self-discovery sidesteps that the
+    # same way tools/repair_windows_wheel.py already does: try both
+    # subdirectories as candidates and let the `-x` check below settle
+    # it, rather than trust any signal for which one *should* apply.
     msys_root="${MSYS2_ROOT:-C:/msys64}"
-    gcc_candidates=(
-      "$msys_root/$mingw_subdir/bin/gcc.exe"
-      "/$mingw_subdir/bin/gcc.exe"
-      "$(cygpath -u "$msys_root" 2>/dev/null || true)/$mingw_subdir/bin/gcc.exe"
-    )
+    gcc_candidates=()
+    for mingw_subdir in mingw64 clangarm64; do
+      gcc_candidates+=(
+        "$msys_root/$mingw_subdir/bin/gcc.exe"
+        "/$mingw_subdir/bin/gcc.exe"
+        "$(cygpath -u "$msys_root" 2>/dev/null || true)/$mingw_subdir/bin/gcc.exe"
+      )
+    done
     gcc_bin=""
     for candidate in "${gcc_candidates[@]}"; do
       if [ -n "$candidate" ] && [ -x "$candidate" ]; then
@@ -209,8 +217,10 @@ case "$kernel" in
       echo "  MSYS2_ROOT=${MSYS2_ROOT:-<unset>}  msys_root=$msys_root" >&2
       echo "  ls -la \"$msys_root\":" >&2
       ls -la "$msys_root" >&2 2>&1 || echo "  (that listing itself failed -- msys_root doesn't exist)" >&2
-      echo "  ls -la \"$msys_root/mingw64/bin\" (if present):" >&2
-      ls -la "$msys_root/mingw64/bin" >&2 2>&1 || echo "  (that listing itself failed)" >&2
+      for mingw_subdir in mingw64 clangarm64; do
+        echo "  ls -la \"$msys_root/$mingw_subdir/bin\" (if present):" >&2
+        ls -la "$msys_root/$mingw_subdir/bin" >&2 2>&1 || echo "  (that listing itself failed)" >&2
+      done
       echo "  PATH=$PATH" >&2
       # Fall back to PATH, but reject a match under the known-wrong
       # C:\mingw64 (case-insensitively, since bash paths here can come

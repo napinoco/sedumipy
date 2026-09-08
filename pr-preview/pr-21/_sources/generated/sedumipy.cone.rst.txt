@@ -1,0 +1,31 @@
+﻿sedumipy.cone
+=============
+
+.. automodule:: sedumipy.cone
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      PopK
+      asmDxq
+      eigK
+      eyeK
+      frameit
+      mat
+      maxeigK
+      mineigK
+      minpsdeig
+      psdeig
+      psdfactor
+      psdinvscale
+      psdjmul
+      psdscale
+      qframeit
+      qinvjmul
+      qjmul
+      tdet
+      triumtriu
+      vec
+   

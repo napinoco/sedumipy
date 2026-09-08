@@ -1,0 +1,12 @@
+﻿sedumipy.getdense
+=================
+
+.. automodule:: sedumipy.getdense
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      getdense
+   

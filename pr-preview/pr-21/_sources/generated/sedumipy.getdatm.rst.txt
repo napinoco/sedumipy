@@ -1,0 +1,12 @@
+﻿sedumipy.getdatm
+================
+
+.. automodule:: sedumipy.getdatm
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      getDAtm
+   

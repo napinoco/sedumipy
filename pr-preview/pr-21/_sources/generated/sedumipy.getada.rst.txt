@@ -1,0 +1,12 @@
+﻿sedumipy.getada
+===============
+
+.. automodule:: sedumipy.getada
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      getada
+   

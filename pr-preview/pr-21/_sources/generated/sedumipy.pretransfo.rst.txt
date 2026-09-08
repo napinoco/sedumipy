@@ -1,0 +1,12 @@
+﻿sedumipy.pretransfo
+===================
+
+.. automodule:: sedumipy.pretransfo
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      pretransfo
+   

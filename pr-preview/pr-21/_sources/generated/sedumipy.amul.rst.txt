@@ -1,0 +1,12 @@
+﻿sedumipy.amul
+=============
+
+.. automodule:: sedumipy.amul
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      amul
+   

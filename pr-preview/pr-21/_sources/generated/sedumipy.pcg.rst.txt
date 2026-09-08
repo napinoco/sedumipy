@@ -1,0 +1,15 @@
+﻿sedumipy.pcg
+============
+
+.. automodule:: sedumipy.pcg
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      loopPcg
+      sparbwslv
+      sparfwslv
+      wrapPcg
+   

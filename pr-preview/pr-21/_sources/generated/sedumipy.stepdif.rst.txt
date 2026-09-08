@@ -1,0 +1,12 @@
+﻿sedumipy.stepdif
+================
+
+.. automodule:: sedumipy.stepdif
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      stepdif
+   

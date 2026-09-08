@@ -273,18 +273,24 @@
 <p>Where a wheel matches your platform, nothing below is needed: the
 compiled kernel library and the BLAS it needs are already inside it, so
 no compiler and no BLAS install are required.</p>
-<p>Wheels are published for CPython 3.10-3.13 on Linux x86_64 (manylinux),
-Windows x64, and macOS (Apple silicon). Linux and Windows carry
+<p>Wheels are published for CPython 3.10-3.13 on Linux x86_64 and
+<code class="docutils literal notranslate"><span class="pre">aarch64</span></code> – both manylinux and musllinux/Alpine – Windows x64, and
+macOS (Apple silicon and Intel); Windows ARM64 is CPython 3.11-3.13
+only, since numpy/scipy publish no win_arm64 wheel for 3.10 (confirmed
+by trying: cibuildwheel’s own test-command step, which installs this
+project’s numpy/scipy dependencies to run a smoke test, then tries to
+compile numpy from source instead and fails for unrelated reasons on
+this toolchain). Linux and Windows carry
 <a class="reference external" href="https://pypi.org/project/scipy-openblas64/">scipy-openblas64</a> (a
 prebuilt, ILP64 OpenBLAS build) as their BLAS, vendored into the wheel
 at build time (<code class="docutils literal notranslate"><span class="pre">auditwheel</span></code>/<code class="docutils literal notranslate"><span class="pre">delvewheel</span></code> – see <a class="reference internal" href="#requirements">Requirements</a>
 below for what building it yourself needs); macOS needs no vendoring at
-all, since it links the system Accelerate framework instead.</p>
-<p>Anything else – 32-bit or ARM Windows, Alpine/musl, Linux <code class="docutils literal notranslate"><span class="pre">aarch64</span></code>,
-Intel macOS – has no wheel, so <code class="docutils literal notranslate"><span class="pre">pip</span></code> falls back to the source
-distribution and compiles on your machine, which needs the toolchain in
-<a class="reference internal" href="#requirements">Requirements</a> below. On Windows that means MSYS2 specifically, which
-is a real obstacle rather than a formality.</p>
+all, since it links the system Accelerate framework instead, on both
+architectures.</p>
+<p>Anything else – 32-bit Windows – has no wheel, so <code class="docutils literal notranslate"><span class="pre">pip</span></code> falls back
+to the source distribution and compiles on your machine, which needs
+the toolchain in <a class="reference internal" href="#requirements">Requirements</a> below. On Windows that means MSYS2
+specifically, which is a real obstacle rather than a formality.</p>
 </section>
 <section id="requirements">
 <h2>Requirements<a class="headerlink" href="#requirements" title="Link to this heading">¶</a></h2>
@@ -297,14 +303,22 @@ compiled kernel library) the first time <code class="docutils literal notranslat
 <ul class="simple">
 <li><p><strong>Linux</strong>: <code class="docutils literal notranslate"><span class="pre">gcc</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">apt</span> <span class="pre">install</span> <span class="pre">build-essential</span></code>).</p></li>
 <li><p><strong>macOS</strong>: nothing extra – Xcode’s command line tools provide <code class="docutils literal notranslate"><span class="pre">cc</span></code>.</p></li>
-<li><p><strong>Windows</strong>: <a class="reference external" href="https://www.msys2.org/">MSYS2</a> with the MINGW64
-<code class="docutils literal notranslate"><span class="pre">mingw-w64-x86_64-gcc</span></code> package installed (<code class="docutils literal notranslate"><span class="pre">pacman</span> <span class="pre">-S</span>
+<li><p><strong>Windows (x64)</strong>: <a class="reference external" href="https://www.msys2.org/">MSYS2</a> with the
+MINGW64 <code class="docutils literal notranslate"><span class="pre">mingw-w64-x86_64-gcc</span></code> package installed (<code class="docutils literal notranslate"><span class="pre">pacman</span> <span class="pre">-S</span>
 <span class="pre">mingw-w64-x86_64-gcc</span></code>), with <code class="docutils literal notranslate"><span class="pre">C:\msys64\mingw64\bin</span></code> and
 <code class="docutils literal notranslate"><span class="pre">C:\msys64\usr\bin</span></code> on <code class="docutils literal notranslate"><span class="pre">PATH</span></code>. Not MSVC – <code class="docutils literal notranslate"><span class="pre">libsedumi.dll</span></code> is
 a plain ctypes-loaded DLL, not a CPython extension, so it doesn’t
 need to match whatever compiler built Python itself. This path is
 exercised in CI (see <a class="reference internal" href="status.html"><span class="doc">Project status</span></a>) but has not been hand-verified
 on a real Windows machine.</p></li>
+<li><p><strong>Windows (ARM64)</strong>: MSYS2’s CLANGARM64 environment instead, with
+the <code class="docutils literal notranslate"><span class="pre">mingw-w64-clang-aarch64-gcc-compat</span></code> package (<code class="docutils literal notranslate"><span class="pre">pacman</span> <span class="pre">-S</span>
+<span class="pre">mingw-w64-clang-aarch64-gcc-compat</span></code> from a <code class="docutils literal notranslate"><span class="pre">clangarm64.exe</span></code>
+shell) – MSYS2 ships no ARM64 build of its own gcc, only this
+clang-based cross toolchain with a gcc-compatible wrapper, which
+<code class="docutils literal notranslate"><span class="pre">tools/build_libsedumi.sh</span></code> detects via <code class="docutils literal notranslate"><span class="pre">uname</span> <span class="pre">-m</span></code> and drives
+with the same GNU-style flags as the x64 build. <code class="docutils literal notranslate"><span class="pre">C:\msys64\</span>
+<span class="pre">clangarm64\bin</span></code> and <code class="docutils literal notranslate"><span class="pre">C:\msys64\usr\bin</span></code> need to be on <code class="docutils literal notranslate"><span class="pre">PATH</span></code>.</p></li>
 </ul>
 </li>
 <li><p>A BLAS:</p>
@@ -334,7 +348,9 @@ running the build): a system BLAS per OS, exactly as before –
 <span class="pre">libopenblas-dev</span></code>; either OpenBLAS or the reference Netlib BLAS
 works, OpenBLAS preferred when both are present since it runs the
 kernels this library calls roughly 3x faster). <strong>Windows</strong>: also
-install <code class="docutils literal notranslate"><span class="pre">mingw-w64-x86_64-openblas</span></code> alongside the compiler above.</p></li>
+install <code class="docutils literal notranslate"><span class="pre">mingw-w64-x86_64-openblas</span></code> (x64) or
+<code class="docutils literal notranslate"><span class="pre">mingw-w64-clang-aarch64-openblas</span></code> (ARM64) alongside the compiler
+above.</p></li>
 </ul>
 <p>See <code class="docutils literal notranslate"><span class="pre">tools/build_libsedumi.sh</span></code> for exactly how the choice between
 scipy-openblas64 and the system-BLAS fallback is made on Linux/Windows.</p>

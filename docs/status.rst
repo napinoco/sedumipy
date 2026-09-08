@@ -29,9 +29,9 @@ MATLAB/Octave-free C library + Python package. As of this writing:
      - Verification against published benchmarks
      - Done
    * - Phase 6
-     - Packaging: Linux/macOS/Windows wheels build in CI; not yet
-       published to PyPI
-     - Partial
+     - Packaging: Linux/macOS/Windows wheels build in CI, published to
+       PyPI
+     - Done
 
 **Scope.** LP, second-order cone (SOCP, ``K.q``/``K.r``), and
 semidefinite (SDP, ``K.s``) problems are fully ported and verified
@@ -86,7 +86,10 @@ had the other two's build/install problem for scipy-openblas64 to solve
   wheel. This path has only been exercised on GitHub Actions' hosted
   Windows runner, not hand-verified on a real Windows machine.
 
-Not yet done: publishing to PyPI.
+Published to `PyPI <https://pypi.org/project/sedumipy/>`_ on release via
+Trusted Publishing -- see `RELEASING.md
+<https://github.com/napinoco/sedumipy/blob/main/RELEASING.md>`_ for how a
+release is cut.
 
 For the full phase-by-phase history and the porting workflow, see
 :doc:`contributing`. For known bugs found and fixed along the way and

@@ -1,0 +1,12 @@
+﻿sedumipy.sdfactor
+=================
+
+.. automodule:: sedumipy.sdfactor
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      sdfactor
+   

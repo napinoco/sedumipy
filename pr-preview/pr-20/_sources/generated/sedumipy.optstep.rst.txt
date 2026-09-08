@@ -1,0 +1,12 @@
+﻿sedumipy.optstep
+================
+
+.. automodule:: sedumipy.optstep
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      optstep
+   

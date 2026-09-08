@@ -46,10 +46,11 @@ on PATH.
 
 You are most likely seeing this because pip fell back to the source
 distribution: prebuilt wheels are published for Windows (x64 and
-ARM64), Linux (x86_64 and aarch64) and macOS (Apple silicon and Intel)
-on CPython 3.10-3.13 -- except Windows ARM64, which is 3.11-3.13 only,
-since numpy/scipy publish no win_arm64 wheel for 3.10 -- so any other
-target, including that one, is compiled here instead.
+ARM64), Linux (x86_64 and aarch64, both manylinux and musllinux/Alpine)
+and macOS (Apple silicon and Intel) on CPython 3.10-3.13 -- except
+Windows ARM64, which is 3.11-3.13 only, since numpy/scipy publish no
+win_arm64 wheel for 3.10 -- so any other target, including that one, is
+compiled here instead.
 
 To build it, install MSYS2 from https://www.msys2.org/ and run this in
 an MSYS2 MinGW64 shell (x64) or CLANGARM64 shell (ARM64):

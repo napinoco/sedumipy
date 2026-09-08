@@ -38,9 +38,18 @@ status and history behind these entries, and
   `tools/repair_windows_wheel.py` picks whichever toolchain directory
   actually exists the same way. scipy-openblas64 ships a win_arm64
   wheel same as win_amd64, so no BLAS-side changes were needed.
-- Still no wheels for 32-bit Windows or Alpine/musl: win32 has no
-  scipy-openblas64 build to link, and musllinux would need its own
-  untested libc story this project has not verified.
+- Wheels now also cover Linux musllinux (Alpine), on both x86_64 and
+  aarch64 -- removed from pyproject.toml's skip list once verified that
+  scipy-openblas64, numpy and scipy all ship musllinux_1_2 wheels for
+  every CPython version this project builds (no cp310-style gap like
+  win_arm64's). No wheels.yml changes needed: cibuildwheel already
+  builds both the manylinux and musllinux variant of each wheel
+  identifier from the same Linux runner by default, and cibuildwheel
+  2.21 already defaults musllinux to musllinux_1_2 -- current enough
+  that, unlike manylinux2014, no musllinux-\\*-image override was
+  needed either.
+- Still no wheels for 32-bit Windows: win32 has no scipy-openblas64
+  build to link.
 
 ## [0.0.4] - 2026-09-06
 

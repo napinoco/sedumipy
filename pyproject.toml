@@ -131,7 +131,23 @@ build = "cp310-* cp311-* cp312-* cp313-*"
 # `cc: error: unsupported option '-mlong-double-64' for target
 # aarch64-w64-windows-gnu`) -- not something this project can fix from
 # here.
-skip = "*-musllinux_* *_i686 *-win32 cp310-win_arm64"
+#
+# musllinux (Alpine/musl libc) also removed from this list: verified
+# scipy-openblas64, numpy and scipy all ship musllinux_1_2 wheels for
+# every cp310-cp313 x x86_64/aarch64 combination this project builds
+# (no cp310-style gap like win_arm64's), and cibuildwheel 2.21 already
+# defaults musllinux to musllinux_1_2 -- current enough that, unlike
+# manylinux2014 below, no musllinux-*-image override is needed. The
+# `build` job's existing ubuntu-latest/ubuntu-24.04-arm matrix entries
+# need no wheels.yml changes either: cibuildwheel builds both the
+# manylinux and musllinux variant of each identifier from the same
+# Linux runner by default, so removing the skip is the only wiring
+# musllinux needs on top of what aarch64 already added there.
+# build_libsedumi.sh's Linux case has nothing glibc-specific either --
+# plain C, and it always links scipy-openblas64 in a wheel build (the
+# system-BLAS link-test fallback only matters for an offline/no-network
+# local build, same as on manylinux).
+skip = "*_i686 *-win32 cp310-win_arm64"
 build-frontend = { name = "pip", args = ["--no-build-isolation"] }
 before-build = "pip install setuptools scipy-openblas64==0.3.34.106.0"
 test-command = "python -c \"import sedumipy, numpy as np; x,y,info = sedumipy.sedumi(np.eye(2), np.array([1.0,1.0]), np.array([1.0,1.0]), {'l':2}); assert info['numerr']==0\""

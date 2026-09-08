@@ -13,13 +13,13 @@ compiled kernel library and the BLAS it needs are already inside it, so
 no compiler and no BLAS install are required.
 
 Wheels are published for CPython 3.10-3.13 on Linux x86_64 and
-``aarch64`` (manylinux), Windows x64, and macOS (Apple silicon and
-Intel); Windows ARM64 is CPython 3.11-3.13 only, since numpy/scipy
-publish no win_arm64 wheel for 3.10 (confirmed by trying: cibuildwheel's
-own test-command step, which installs this project's numpy/scipy
-dependencies to run a smoke test, then tries to compile numpy from
-source instead and fails for unrelated reasons on this toolchain).
-Linux and Windows carry
+``aarch64`` -- both manylinux and musllinux/Alpine -- Windows x64, and
+macOS (Apple silicon and Intel); Windows ARM64 is CPython 3.11-3.13
+only, since numpy/scipy publish no win_arm64 wheel for 3.10 (confirmed
+by trying: cibuildwheel's own test-command step, which installs this
+project's numpy/scipy dependencies to run a smoke test, then tries to
+compile numpy from source instead and fails for unrelated reasons on
+this toolchain). Linux and Windows carry
 `scipy-openblas64 <https://pypi.org/project/scipy-openblas64/>`_ (a
 prebuilt, ILP64 OpenBLAS build) as their BLAS, vendored into the wheel
 at build time (``auditwheel``/``delvewheel`` -- see `Requirements`_
@@ -27,11 +27,10 @@ below for what building it yourself needs); macOS needs no vendoring at
 all, since it links the system Accelerate framework instead, on both
 architectures.
 
-Anything else -- 32-bit Windows, Alpine/musl -- has no wheel, so ``pip``
-falls back to the source distribution and compiles on your machine,
-which needs the toolchain in `Requirements`_ below. On Windows that
-means MSYS2 specifically, which is a real obstacle rather than a
-formality.
+Anything else -- 32-bit Windows -- has no wheel, so ``pip`` falls back
+to the source distribution and compiles on your machine, which needs
+the toolchain in `Requirements`_ below. On Windows that means MSYS2
+specifically, which is a real obstacle rather than a formality.
 
 Requirements
 ------------

@@ -29,11 +29,11 @@ MATLAB/Octave-free C library + Python package. As of this writing:
      - Verification against published benchmarks
      - Done
    * - Phase 6
-     - Packaging: Linux/macOS/Windows wheels build in CI; not yet
-       published to PyPI
-     - Partial
+     - Packaging: Linux/macOS/Windows wheels build in CI, published to
+       PyPI
+     - Done
 
-**Scope.** LP, second-order cone (SOCP, ``K.q``/``K.r``), and
+**Scope.** LP (``K.l``), second-order cone (SOCP, ``K.q``/``K.r``), and
 semidefinite (SDP, ``K.s``) problems are fully ported and verified
 against original Octave/SeDuMi output on both synthetic fixtures
 and published SDPLIB/DIMACS benchmark problems (:doc:`usage`'s
@@ -53,11 +53,11 @@ OpenBLAS, see below -- on Linux; OpenBLAS on Windows; Accelerate on
 macOS).
 
 **Not ported** (deliberately out of scope, no effect on the returned
-``(x, y, info)``): the console progress printout, ``pars.vplot``'s
-v-plot, ``pars.stopat``'s interactive debug break, the optional pre-solve
-rank/infeasibility diagnostic, and the DIMACS error-measures block
-(``info.err``). Complex Hermitian PSD problems (``K.scomplex``/
-``K.ycomplex``) are also out of scope.
+``(x, y, info)``): ``pars.vplot``'s v-plot, ``pars.stopat``'s interactive
+debug break, the optional pre-solve rank/infeasibility diagnostic, and
+the DIMACS error-measures block (``info.err``). Complex Hermitian PSD
+problems (``K.scomplex``/``K.ycomplex``) are also out of scope. (Console
+progress output itself *is* ported -- see :doc:`usage`'s ``fid`` option.)
 
 **Packaging.** A wheel with ``libsedumi.so`` bundled builds and installs
 correctly (verified in an isolated virtualenv with no access to the
@@ -86,7 +86,10 @@ had the other two's build/install problem for scipy-openblas64 to solve
   wheel. This path has only been exercised on GitHub Actions' hosted
   Windows runner, not hand-verified on a real Windows machine.
 
-Not yet done: publishing to PyPI.
+Published to `PyPI <https://pypi.org/project/sedumipy/>`_ on release via
+Trusted Publishing -- see `RELEASING.md
+<https://github.com/napinoco/sedumipy/blob/main/RELEASING.md>`_ for how a
+release is cut.
 
 For the full phase-by-phase history and the porting workflow, see
 :doc:`contributing`. For known bugs found and fixed along the way and

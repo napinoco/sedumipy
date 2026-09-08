@@ -6,7 +6,7 @@
 <link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="Contributing" href="contributing.html"><link rel="prev" title="sedumipy.wregion" href="generated/sedumipy.wregion.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>Project status - sedumipy 0.0.4 documentation</title>
+        <title>Project status - sedumipy 0.0.5 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
@@ -161,7 +161,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="index.html"><div class="brand">sedumipy 0.0.4 documentation</div></a>
+      <a href="index.html"><div class="brand">sedumipy 0.0.5 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -182,7 +182,7 @@
       
       <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
   
-  <span class="sidebar-brand-text">sedumipy 0.0.4 documentation</span>
+  <span class="sidebar-brand-text">sedumipy 0.0.5 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -301,14 +301,14 @@ MATLAB/Octave-free C library + Python package. As of this writing:</p>
 <td><p>Done</p></td>
 </tr>
 <tr class="row-even"><td><p>Phase 6</p></td>
-<td><p>Packaging: Linux/macOS/Windows wheels build in CI; not yet
-published to PyPI</p></td>
-<td><p>Partial</p></td>
+<td><p>Packaging: Linux/macOS/Windows wheels build in CI, published to
+PyPI</p></td>
+<td><p>Done</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p><strong>Scope.</strong> LP, second-order cone (SOCP, <code class="docutils literal notranslate"><span class="pre">K.q</span></code>/<code class="docutils literal notranslate"><span class="pre">K.r</span></code>), and
+<p><strong>Scope.</strong> LP (<code class="docutils literal notranslate"><span class="pre">K.l</span></code>), second-order cone (SOCP, <code class="docutils literal notranslate"><span class="pre">K.q</span></code>/<code class="docutils literal notranslate"><span class="pre">K.r</span></code>), and
 semidefinite (SDP, <code class="docutils literal notranslate"><span class="pre">K.s</span></code>) problems are fully ported and verified
 against original Octave/SeDuMi output on both synthetic fixtures
 and published SDPLIB/DIMACS benchmark problems (<a class="reference internal" href="usage.html"><span class="doc">Usage</span></a>’s
@@ -326,11 +326,11 @@ OpenBLAS, and scipy-openblas64 – a pip-installable, prebuilt ILP64
 OpenBLAS, see below – on Linux; OpenBLAS on Windows; Accelerate on
 macOS).</p>
 <p><strong>Not ported</strong> (deliberately out of scope, no effect on the returned
-<code class="docutils literal notranslate"><span class="pre">(x,</span> <span class="pre">y,</span> <span class="pre">info)</span></code>): the console progress printout, <code class="docutils literal notranslate"><span class="pre">pars.vplot</span></code>’s
-v-plot, <code class="docutils literal notranslate"><span class="pre">pars.stopat</span></code>’s interactive debug break, the optional pre-solve
-rank/infeasibility diagnostic, and the DIMACS error-measures block
-(<code class="docutils literal notranslate"><span class="pre">info.err</span></code>). Complex Hermitian PSD problems (<code class="docutils literal notranslate"><span class="pre">K.scomplex</span></code>/
-<code class="docutils literal notranslate"><span class="pre">K.ycomplex</span></code>) are also out of scope.</p>
+<code class="docutils literal notranslate"><span class="pre">(x,</span> <span class="pre">y,</span> <span class="pre">info)</span></code>): <code class="docutils literal notranslate"><span class="pre">pars.vplot</span></code>’s v-plot, <code class="docutils literal notranslate"><span class="pre">pars.stopat</span></code>’s interactive
+debug break, the optional pre-solve rank/infeasibility diagnostic, and
+the DIMACS error-measures block (<code class="docutils literal notranslate"><span class="pre">info.err</span></code>). Complex Hermitian PSD
+problems (<code class="docutils literal notranslate"><span class="pre">K.scomplex</span></code>/<code class="docutils literal notranslate"><span class="pre">K.ycomplex</span></code>) are also out of scope. (Console
+progress output itself <em>is</em> ported – see <a class="reference internal" href="usage.html"><span class="doc">Usage</span></a>’s <code class="docutils literal notranslate"><span class="pre">fid</span></code> option.)</p>
 <p><strong>Packaging.</strong> A wheel with <code class="docutils literal notranslate"><span class="pre">libsedumi.so</span></code> bundled builds and installs
 correctly (verified in an isolated virtualenv with no access to the
 source tree). <code class="docutils literal notranslate"><span class="pre">cibuildwheel</span></code> builds run in CI
@@ -357,7 +357,9 @@ to be built with the same compiler as Python itself.
 wheel. This path has only been exercised on GitHub Actions’ hosted
 Windows runner, not hand-verified on a real Windows machine.</p></li>
 </ul>
-<p>Not yet done: publishing to PyPI.</p>
+<p>Published to <a class="reference external" href="https://pypi.org/project/sedumipy/">PyPI</a> on release via
+Trusted Publishing – see <a class="reference external" href="https://github.com/napinoco/sedumipy/blob/main/RELEASING.md">RELEASING.md</a> for how a
+release is cut.</p>
 <p>For the full phase-by-phase history and the porting workflow, see
 <a class="reference internal" href="contributing.html"><span class="doc">Contributing</span></a>. For known bugs found and fixed along the way and
 the session-by-session history of how this status was reached, see
@@ -413,7 +415,7 @@ the session-by-session history of how this status was reached, see
       
     </aside>
   </div>
-</div><script src="_static/documentation_options.js?v=8c5712d9"></script>
+</div><script src="_static/documentation_options.js?v=282f96c0"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/scripts/furo.js?v=46bd48cc"></script>

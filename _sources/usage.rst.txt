@@ -437,8 +437,14 @@ passed through as sedumi()'s ``pars``:
 
    problem.solve(solver=SEDUMIPY(), eps=1e-10, maxiter=250)
 
-``verbose=True`` has no effect (this port does not implement SeDuMi's
-console progress printout), and neither does warm starting.
+``verbose=True`` has no effect, and neither does warm starting. The
+``fid`` option described above isn't wired to ``verbose`` either -- it
+defaults to ``1``, so ``solve()`` prints SeDuMi's progress table to
+stdout regardless of ``verbose``; pass ``fid=0`` to silence it:
+
+.. code-block:: python
+
+   problem.solve(solver=SEDUMIPY(), fid=0)
 
 **Scope.** The interface covers the cones sedumipy itself supports:
 equalities, inequalities, second-order cone and PSD constraints -- so

@@ -17,9 +17,11 @@ one-time setup below has to name all four.
 
 ## One-time setup (per index)
 
-Do this once on TestPyPI and once on PyPI. Both accept a *pending*
-publisher, i.e. one created before the project exists on that index --
-which is the case here, since nothing has been uploaded yet.
+Already done for this project (kept here for reference, and in case a
+publisher ever needs to be recreated). Do this once on TestPyPI and once
+on PyPI. Both accept a *pending* publisher, i.e. one created before the
+project exists on that index -- which was the case here, since nothing
+had been uploaded yet at the time.
 
 1. Sign in, go to **Your account -> Publishing -> Add a new pending
    publisher**, choose GitHub, and enter:

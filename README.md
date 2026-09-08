@@ -61,10 +61,10 @@ work.
 
 ## Status
 
-LP, second-order-cone (SOCP), and semidefinite (SDP, `K.s`) problems are
-all fully ported and verified against original Octave/SeDuMi output, to
-tight numerical tolerances, including on published
-[SDPLIB](https://github.com/vsdp/SDPLIB)
+LP (`K.l`), second-order-cone (SOCP, `K.q`/`K.r`), and semidefinite (SDP,
+`K.s`) problems are all fully ported and verified against original
+Octave/SeDuMi output, to tight numerical tolerances, including on
+published [SDPLIB](https://github.com/vsdp/SDPLIB)
 and [DIMACS](https://github.com/vsdp/DIMACS) benchmark problems (see
 [Benchmarks](#benchmarks) below). Dense-column preconditioning is also
 implemented. Wheels are published to PyPI for Linux (manylinux), macOS

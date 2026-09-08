@@ -8,6 +8,8 @@ status and history behind these entries, and
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-09-08
+
 ### Added
 
 - Wheels now also cover Linux `aarch64` and Intel macOS, via GitHub's
@@ -127,8 +129,8 @@ First release published to [PyPI](https://pypi.org/project/sedumipy/):
 - Ported `sedumi()`, SeDuMi's top-level LP/SOCP/SDP interior-point
   solver driver, to pure Python (NumPy/SciPy) plus a standalone C kernel
   library (`libsedumi.so`/`.dylib`, no MATLAB/Octave/MEX dependency),
-  loaded via `ctypes`. LP, second-order-cone (SOCP), and semidefinite
-  (SDP, `K.s`) problems are in scope and verified against
+  loaded via `ctypes`. LP (`K.l`), second-order-cone (SOCP, `K.q`/`K.r`),
+  and semidefinite (SDP, `K.s`) problems are in scope and verified against
   original Octave/SeDuMi output (to tight numerical tolerances -- see
   `docs/status.rst`), including on published
   [SDPLIB](https://github.com/vsdp/SDPLIB) and

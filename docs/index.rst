@@ -73,9 +73,9 @@ PSD blocks in one problem) and :doc:`api` for the full public API.
 Project status
 --------------
 
-LP and SOCP problems are fully ported and verified against
-original Octave/SeDuMi output; PSD (``K.s``) cones are also implemented and
-verified against real reference solves. See :doc:`status` for the current
+LP (``K.l``), second-order cone (SOCP, ``K.q``/``K.r``), and
+semidefinite (SDP, ``K.s``) problems are all fully ported and verified
+against original Octave/SeDuMi output. See :doc:`status` for the current
 scope and :doc:`contributing` for the full phase-by-phase project history.
 
 A note on citation and attribution

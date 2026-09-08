@@ -233,8 +233,9 @@ struck through and marked **Done**/**Resolved**/**Fixed** — this is a
 log of how the project got to its current state (see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) §2 and
 [`docs/status.rst`](docs/status.rst) for that current state itself), not
-a live task list. As of this writing the only item that's still
-genuinely open is part of item 4 (Phase 6): publishing to PyPI.
+a live task list. Every phase, including item 4 (Phase 6)'s PyPI
+publishing, is complete as of this writing -- see
+[`CHANGELOG.md`](CHANGELOG.md) for the published releases.
 
 1. ~~**Phase 3-a: finish the public API for thin MEX-wrapper `.m`
    files.**~~ **Done.** Cross-checking `install_sedumi.m`'s list of MEX
@@ -396,7 +397,9 @@ genuinely open is part of item 4 (Phase 6): publishing to PyPI.
      runners on GitHub Actions running `ci.yml`/`wheels.yml` (the
      intended workflow is to open a PR and check the CI results).
 
-   **Still open:** publishing to PyPI has not been done yet.
+   **Resolved in a later session:** published to PyPI (`pip install
+   sedumipy`) -- see [`CHANGELOG.md`](CHANGELOG.md) for the release
+   history and [`RELEASING.md`](RELEASING.md) for the process used.
 5. **`getdatm.py`'s OOM fix (always building `DAt.q` sparse) was, in
    turn, slowing down small-to-medium problems where dense is actually
    faster. Now fixed.** Making the `has_psd=False` (LP+SOCP only,
